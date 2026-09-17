@@ -47,9 +47,37 @@ import {
   Sparkles,
   Upload,
   Workflow,
-  Zap,
 } from "lucide-react";
-import { initialConfig, modelPresets, gpuPresets } from "@/data/presets";
+import {
+  SiDeepseek,
+  SiGoogle,
+  SiHuggingface,
+  SiMeta,
+  SiMistralai,
+  SiNvidia,
+  SiPytorch,
+  SiQwen,
+} from "react-icons/si";
+import type { IconType } from "react-icons";
+import {
+  TbAdjustmentsHorizontal,
+  TbArrowsShuffle,
+  TbBinaryTree,
+  TbBrain,
+  TbBraces,
+  TbChartDots3,
+  TbCircleDot,
+  TbCube,
+  TbMathFunction,
+  TbSparkles,
+  TbTextRecognition,
+} from "react-icons/tb";
+import {
+  initialConfig,
+  modelLibrary,
+  modelPresets,
+  gpuPresets,
+} from "@/data/presets";
 import {
   simulate,
   trainingAtProgress,
@@ -128,22 +156,34 @@ const catalog: {
     ],
   },
 ];
-const glyph: Record<Kind, string> = {
-  input: "Aa",
-  tokenizer: "⌗",
-  embedding: "▦",
-  position: "◷",
-  transformer: "✦",
-  attention: "◎",
-  ffn: "⇄",
-  norm: "≈",
-  head: "∑",
-  loss: "∇",
-  dataset: "▤",
-  gpu: "▣",
-  cluster: "▧",
-  optimizer: "↗",
-  custom: "◇",
+const kindIcons: Record<Kind, IconType> = {
+  input: TbTextRecognition,
+  tokenizer: TbBraces,
+  embedding: TbCube,
+  position: TbAdjustmentsHorizontal,
+  transformer: TbBinaryTree,
+  attention: TbBrain,
+  ffn: TbArrowsShuffle,
+  norm: TbAdjustmentsHorizontal,
+  head: TbMathFunction,
+  loss: TbChartDots3,
+  dataset: SiHuggingface,
+  gpu: SiNvidia,
+  cluster: TbBinaryTree,
+  optimizer: SiPytorch,
+  custom: TbSparkles,
+};
+const providerIcons: Record<string, IconType> = {
+  OpenAI: TbBrain,
+  Meta: SiMeta,
+  "Mistral AI": SiMistralai,
+  Google: SiGoogle,
+  Qwen: SiQwen,
+  DeepSeek: SiDeepseek,
+};
+const KindIcon = ({ kind, size = 17 }: { kind: Kind; size?: number }) => {
+  const Icon = kindIcons[kind] || TbCircleDot;
+  return <Icon size={size} strokeWidth={1.9} aria-hidden="true" />;
 };
 const initialNodes: StudioNode[] = [
   {
@@ -272,7 +312,9 @@ function NodeCard({ data, selected }: NodeProps<StudioNode>) {
     >
       <Handle type="target" position={Position.Left} className="node-handle" />
       <div className="node-top">
-        <span className="node-glyph">{glyph[k]}</span>
+        <span className="node-glyph">
+          <KindIcon kind={k} size={16} />
+        </span>
         <span className="node-title">{data.title}</span>
         <span className="node-menu">•••</span>
       </div>
@@ -310,7 +352,7 @@ function NodeCard({ data, selected }: NodeProps<StudioNode>) {
               },
               (_, i) => (
                 <span key={i} title={`GPU ${i}`}>
-                  ▣
+                  <SiNvidia size={10} aria-hidden="true" />
                 </span>
               ),
             )}
@@ -338,6 +380,53 @@ function NodeCard({ data, selected }: NodeProps<StudioNode>) {
   );
 }
 const nodeTypes = { studio: NodeCard };
+
+const sliderBounds: Record<string, { min: number; max: number; step: number }> =
+  {
+    "Training tokens": { min: 1e9, max: 20e12, step: 1e9 },
+    "Available tokens": { min: 1e9, max: 20e12, step: 1e9 },
+    "Vocabulary size": { min: 8000, max: 300000, step: 1000 },
+    Vocabulary: { min: 8000, max: 300000, step: 1000 },
+    "Hidden size": { min: 128, max: 16384, step: 128 },
+    Layers: { min: 1, max: 128, step: 1 },
+    "Attention heads": { min: 1, max: 128, step: 1 },
+    "KV heads": { min: 1, max: 128, step: 1 },
+    "FFN size": { min: 256, max: 65536, step: 256 },
+    Experts: { min: 1, max: 512, step: 1 },
+    "Active experts": { min: 1, max: 64, step: 1 },
+    "Sequence length": { min: 128, max: 131072, step: 128 },
+    "Special tokens": { min: 0, max: 512, step: 1 },
+    "Characters / token": { min: 1, max: 8, step: 0.1 },
+    "Bytes / token": { min: 1, max: 8, step: 0.1 },
+    "Average document": { min: 128, max: 4096, step: 64 },
+    Epochs: { min: 1, max: 10, step: 1 },
+    "Micro batch / GPU": { min: 1, max: 64, step: 1 },
+    "Global batch": { min: 1, max: 8192, step: 1 },
+    Accumulation: { min: 1, max: 64, step: 1 },
+    "Learning rate": { min: 0.00001, max: 0.003, step: 0.00001 },
+    "Warmup steps": { min: 0, max: 20000, step: 100 },
+    "Weight decay": { min: 0, max: 0.5, step: 0.01 },
+    "Gradient clip": { min: 0, max: 10, step: 0.1 },
+    "Checkpoint every": { min: 100, max: 10000, step: 100 },
+    VRAM: { min: 4, max: 192, step: 4 },
+    "HBM bandwidth": { min: 100, max: 10000, step: 50 },
+    "BF16 compute": { min: 0, max: 5000, step: 10 },
+    "FP8 compute": { min: 0, max: 5000, step: 10 },
+    Power: { min: 50, max: 1500, step: 10 },
+    "GPUs / node": { min: 1, max: 16, step: 1 },
+    Nodes: { min: 1, max: 128, step: 1 },
+    Interconnect: { min: 10, max: 2000, step: 10 },
+    Network: { min: 10, max: 1600, step: 10 },
+    "GPU cost / hour": { min: 0, max: 20, step: 0.05 },
+    "Network / hour": { min: 0, max: 20, step: 0.05 },
+    "Storage / hour": { min: 0, max: 20, step: 0.05 },
+    "CPU / hour": { min: 0, max: 20, step: 0.05 },
+    "Data parallel": { min: 1, max: 128, step: 1 },
+    "Tensor parallel": { min: 1, max: 128, step: 1 },
+    "Pipeline parallel": { min: 1, max: 128, step: 1 },
+    "Sequence parallel": { min: 1, max: 128, step: 1 },
+    "Expert parallel": { min: 1, max: 128, step: 1 },
+  };
 function Field({
   label,
   value,
@@ -357,29 +446,47 @@ function Field({
   step?: number;
   hint?: string;
 }) {
+  const numeric = typeof value === "number";
+  const preset = sliderBounds[label];
+  const sliderStep = preset?.step ?? step;
+  const sliderMin = min ?? preset?.min ?? 0;
+  const sliderMax =
+    max ?? preset?.max ?? Math.max(Number(value) * 2, sliderStep * 10, 1);
   return (
     <label className="field">
-      <span>
+      <span className="field-label">
         {label}
         {hint && <small title={hint}>ⓘ</small>}
+        <output className="field-value">
+          {numeric
+            ? Number(value).toLocaleString(undefined, {
+                maximumFractionDigits: sliderStep < 1 ? 5 : 0,
+              })
+            : value}
+          {unit ? ` ${unit}` : ""}
+        </output>
       </span>
-      <div className="input-wrap">
+      {numeric ? (
         <input
-          type={typeof value === "number" ? "number" : "text"}
+          className="range-input"
+          type="range"
           value={value}
-          min={min}
-          max={max}
-          step={step}
-          onChange={(e) =>
-            onChange(
-              typeof value === "number"
-                ? Number(e.target.value)
-                : e.target.value,
-            )
-          }
+          min={sliderMin}
+          max={sliderMax}
+          step={sliderStep}
+          aria-label={label}
+          onChange={(e) => onChange(Number(e.target.value))}
         />
-        {unit && <em>{unit}</em>}
-      </div>
+      ) : (
+        <div className="input-wrap">
+          <input
+            type="text"
+            value={value}
+            aria-label={label}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </div>
+      )}
     </label>
   );
 }
@@ -467,6 +574,7 @@ function StudioInner() {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState("10×");
   const [progress, setProgress] = useState(0);
+  const [liveTick, setLiveTick] = useState(0);
   const [bottomOpen, setBottomOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState<
     "timeline" | "memory" | "parameters" | "compare" | "logs"
@@ -502,6 +610,114 @@ function StudioInner() {
     () => simulate(config, architecture),
     [config, architecture],
   );
+  const live = useCallback(
+    (value: number, amplitude = 1, phase = 0) =>
+      value + Math.sin(liveTick * 0.78 + phase) * amplitude,
+    [liveTick],
+  );
+  const animatedMetrics = useMemo(() => {
+    const memory = {
+      ...metrics.memory,
+      parameters: Math.max(0, live(metrics.memory.parameters, 0.16, 0.4)),
+      gradients: Math.max(0, live(metrics.memory.gradients, 0.14, 1.2)),
+      optimizer: Math.max(0, live(metrics.memory.optimizer, 0.12, 2.1)),
+      activations: Math.max(0, live(metrics.memory.activations, 0.2, 2.8)),
+      temporary: Math.max(0, live(metrics.memory.temporary, 0.08, 3.4)),
+      runtime: Math.max(0, live(metrics.memory.runtime, 0.04, 4.1)),
+    };
+    memory.total =
+      memory.parameters +
+      memory.gradients +
+      memory.optimizer +
+      memory.activations +
+      memory.temporary +
+      memory.runtime;
+    memory.free = config.hardware.vram - memory.total;
+    return {
+      ...metrics,
+      parameters: Math.max(
+        0,
+        live(
+          metrics.parameters,
+          Math.max(25_000_000, metrics.parameters * 0.003),
+          0.7,
+        ),
+      ),
+      memory,
+      utilization: Math.max(
+        0,
+        Math.min(1, live(metrics.utilization, 0.008, 1.3)),
+      ),
+      mfu: Math.max(0, Math.min(1, live(metrics.mfu, 0.006, 2.4))),
+      bandwidthUtil: Math.max(
+        0,
+        Math.min(1, live(metrics.bandwidthUtil, 0.01, 3.1)),
+      ),
+      tokensPerSecond: Math.max(
+        1,
+        live(
+          metrics.tokensPerSecond,
+          Math.max(1, metrics.tokensPerSecond * 0.012),
+          1.7,
+        ),
+      ),
+      cost: Math.max(
+        0,
+        live(metrics.cost, Math.max(0.15, metrics.cost * 0.004), 2.9),
+      ),
+      energyKWh: Math.max(
+        0,
+        live(metrics.energyKWh, Math.max(0.05, metrics.energyKWh * 0.005), 3.6),
+      ),
+      attentionMatrixGB: Math.max(
+        0,
+        live(metrics.attentionMatrixGB, 0.08, 4.4),
+      ),
+      breakdown: {
+        ...metrics.breakdown,
+        embeddings: Math.max(
+          0,
+          live(
+            metrics.breakdown.embeddings,
+            Math.max(5_000_000, metrics.breakdown.embeddings * 0.003),
+            0.9,
+          ),
+        ),
+        attention: Math.max(
+          0,
+          live(
+            metrics.breakdown.attention,
+            Math.max(5_000_000, metrics.breakdown.attention * 0.003),
+            1.5,
+          ),
+        ),
+        ffn: Math.max(
+          0,
+          live(
+            metrics.breakdown.ffn,
+            Math.max(5_000_000, metrics.breakdown.ffn * 0.003),
+            2.1,
+          ),
+        ),
+        norm: Math.max(
+          0,
+          live(
+            metrics.breakdown.norm,
+            Math.max(5_000_000, metrics.breakdown.norm * 0.003),
+            2.7,
+          ),
+        ),
+        lmHead: Math.max(
+          0,
+          live(
+            metrics.breakdown.lmHead,
+            Math.max(5_000_000, metrics.breakdown.lmHead * 0.003),
+            3.3,
+          ),
+        ),
+      },
+    };
+  }, [config.hardware.vram, live, metrics]);
   const training = useMemo(
     () => trainingAtProgress(config, metrics, progress / 100),
     [config, metrics, progress],
@@ -510,6 +726,33 @@ function StudioInner() {
     key: K,
     patch: Partial<Config[K]>,
   ) => setConfig((prev) => ({ ...prev, [key]: { ...prev[key], ...patch } }));
+  const chooseModel = useCallback(
+    (name: string) => {
+      const preset = modelLibrary[name];
+      if (!preset) return;
+      setConfig((prev) => ({
+        ...prev,
+        model: { ...initialConfig.model, ...preset.model, name },
+        tokenizer: { ...initialConfig.tokenizer, ...preset.tokenizer },
+        dataset: { ...initialConfig.dataset, ...(preset.dataset || {}) },
+      }));
+      setNodes(
+        initialNodes.map((node) => ({ ...node, data: { ...node.data } })),
+      );
+      setEdges(initialEdges);
+      setSelected("transformer");
+      setActivePanel("inspect");
+      setProgress(0);
+      setPlaying(false);
+      setShowPresets(false);
+      flash(`${name} architecture loaded`);
+    },
+    [setEdges, setNodes],
+  );
+  useEffect(() => {
+    const id = window.setInterval(() => setLiveTick((tick) => tick + 1), 180);
+    return () => window.clearInterval(id);
+  }, []);
   useEffect(() => {
     try {
       const raw = localStorage.getItem("tensorforge-project");
@@ -584,15 +827,17 @@ function StudioInner() {
           tensor = "";
         if (kind === "transformer") {
           metric =
-            format(metrics.breakdown.attention + metrics.breakdown.ffn) +
-            " params";
+            format(
+              animatedMetrics.breakdown.attention +
+                animatedMetrics.breakdown.ffn,
+            ) + " params";
           detail = `${config.model.layers} layers`;
           subtitle = `${config.model.layers} layers · ${config.model.attention}`;
           tensor = `[B, ${config.model.sequence}, ${config.model.hidden}]`;
         }
         if (kind === "embedding") {
-          metric = format(metrics.breakdown.embeddings) + " params";
-          detail = `${((metrics.breakdown.embeddings * 2) / 1024 ** 3).toFixed(1)} GB`;
+          metric = format(animatedMetrics.breakdown.embeddings) + " params";
+          detail = `${((animatedMetrics.breakdown.embeddings * 2) / 1024 ** 3).toFixed(1)} GB`;
           tensor = `[B, ${config.model.sequence}, ${config.model.hidden}]`;
         }
         if (kind === "tokenizer") {
@@ -603,28 +848,29 @@ function StudioInner() {
         if (kind === "head") {
           metric = config.model.tiedEmbeddings
             ? "Tied weights"
-            : format(metrics.breakdown.lmHead) + " params";
+            : format(animatedMetrics.breakdown.lmHead) + " params";
           tensor = `[B, ${config.model.sequence}, ${config.model.vocab}]`;
         }
         if (kind === "dataset") {
           subtitle = `${format(config.dataset.tokens)} tokens · ${config.dataset.epochs} epoch`;
-          metric = `${format(metrics.totalTokens)} total`;
-          detail = `${format(metrics.steps)} steps`;
+          metric = `${format(animatedMetrics.totalTokens)} total`;
+          detail = `${format(animatedMetrics.steps)} steps`;
         }
         if (kind === "gpu" || kind === "cluster") {
-          subtitle = `${metrics.gpus} × ${config.hardware.gpu}`;
-          metric = `${Math.round((metrics.memory.total / config.hardware.vram) * 100)}%`;
-          detail = `${Math.round(metrics.utilization * 100)}% compute`;
+          subtitle = `${animatedMetrics.gpus} × ${config.hardware.gpu}`;
+          metric = `${Math.round((animatedMetrics.memory.total / config.hardware.vram) * 100)}%`;
+          detail = `${Math.round(animatedMetrics.utilization * 100)}% compute`;
         }
         if (kind === "optimizer") {
           subtitle = config.training.optimizer + " · " + config.model.precision;
-          metric = `${metrics.memory.optimizer.toFixed(1)} GB states`;
+          metric = `${animatedMetrics.memory.optimizer.toFixed(1)} GB states`;
         }
         if (kind === "attention") {
-          metric = `${metrics.attentionMatrixGB.toFixed(1)} GB matrix`;
+          metric = `${animatedMetrics.attentionMatrixGB.toFixed(1)} GB matrix`;
           tensor = `[B, ${config.model.heads}, T, T]`;
         }
-        if (kind === "ffn") metric = format(metrics.breakdown.ffn) + " params";
+        if (kind === "ffn")
+          metric = format(animatedMetrics.breakdown.ffn) + " params";
         if (kind === "input") tensor = `[B, ${config.model.sequence}]`;
         const phaseIndex = progress % 12;
         const activeKinds: Kind[][] = [
@@ -649,11 +895,12 @@ function StudioInner() {
             metric,
             detail,
             executing: playing && activeKinds[phaseIndex].includes(kind),
-            warning: (kind === "gpu" || kind === "cluster") && metrics.oom,
+            warning:
+              (kind === "gpu" || kind === "cluster") && animatedMetrics.oom,
           },
         };
       }),
-    [nodes, config, metrics, tensorMode, playing, progress],
+    [nodes, config, animatedMetrics, tensorMode, playing, progress],
   );
   const onConnect = useCallback(
     (connection: Connection) =>
@@ -816,31 +1063,82 @@ function StudioInner() {
           </div>
         </div>
         <div className="top-separator" />
-        <div className="project-name">
-          <span className="status-dot" /> {config.model.name}{" "}
-          <ChevronDown size={14} />
+        <div className="model-picker-wrap">
+          <button
+            className="model-picker"
+            onClick={() => setShowPresets((open) => !open)}
+            aria-expanded={showPresets}
+            aria-haspopup="menu"
+          >
+            <span className="status-dot" />
+            <span className="model-picker-copy">
+              <small>MODEL ARCHITECTURE</small>
+              <strong>{config.model.name}</strong>
+            </span>
+            <ChevronDown size={14} />
+          </button>
+          {showPresets && (
+            <div className="model-preset-menu" role="menu">
+              <div className="model-preset-heading">
+                <span>REFERENCE MODELS</span>
+                <small>Replaces model, tokenizer + corpus fields</small>
+              </div>
+              {Object.entries(modelLibrary).map(([name, preset]) => {
+                const ProviderIcon = providerIcons[preset.provider] || TbBrain;
+                return (
+                  <button
+                    key={name}
+                    className={
+                      "model-preset-option " +
+                      (config.model.name === name ? "active" : "")
+                    }
+                    role="menuitem"
+                    onClick={() => chooseModel(name)}
+                  >
+                    <span className="preset-brand">
+                      <ProviderIcon size={17} aria-hidden="true" />
+                    </span>
+                    <span>
+                      <strong>{name}</strong>
+                      <small>{preset.family}</small>
+                    </span>
+                    <em>{preset.model.layers}L</em>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="top-metrics">
           <div>
             <small>PARAMETERS</small>
-            <strong>{format(metrics.parameters)}</strong>
+            <strong className="telemetry-value">
+              {format(animatedMetrics.parameters, 2)}
+            </strong>
           </div>
           <div>
             <small>GPU MEMORY</small>
-            <strong className={metrics.oom ? "error" : ""}>
-              {metrics.memory.total.toFixed(1)}{" "}
+            <strong className={animatedMetrics.oom ? "error" : ""}>
+              <span className="telemetry-value">
+                {animatedMetrics.memory.total.toFixed(1)}
+              </span>{" "}
               <span>/ {config.hardware.vram} GB</span>
             </strong>
           </div>
           <div>
             <small>THROUGHPUT</small>
             <strong>
-              {format(metrics.tokensPerSecond)} <span>tok/s</span>
+              <span className="telemetry-value">
+                {format(animatedMetrics.tokensPerSecond, 2)}
+              </span>{" "}
+              <span>tok/s</span>
             </strong>
           </div>
           <div>
             <small>EST. COST</small>
-            <strong>{money(metrics.cost)}</strong>
+            <strong className="telemetry-value">
+              {money(animatedMetrics.cost)}
+            </strong>
           </div>
         </div>
         <div className="run-controls">
@@ -938,7 +1236,9 @@ function StudioInner() {
                         setSelected(id);
                       }}
                     >
-                      <span className="palette-icon">{glyph[i.kind]}</span>
+                      <span className="palette-icon">
+                        <KindIcon kind={i.kind} size={18} />
+                      </span>
                       <span>
                         <b>{i.title}</b>
                         <small>{i.desc}</small>
@@ -1039,7 +1339,7 @@ function StudioInner() {
             <div className="simulation-indicator">
               <span className="pulse" /> Step{" "}
               {training.completedSteps.toLocaleString()} /{" "}
-              {metrics.steps.toLocaleString()}
+              {animatedMetrics.steps.toLocaleString()}
               <div className="phase-label">
                 {progress % 12 < 6
                   ? "FORWARD PASS"
@@ -1092,7 +1392,9 @@ function StudioInner() {
                 {selectedNode ? (
                   <>
                     <div className="selection-summary">
-                      <span className={"summary-icon " + sk}>{glyph[sk!]}</span>
+                      <span className={"summary-icon " + sk}>
+                        <KindIcon kind={sk!} size={19} />
+                      </span>
                       <div>
                         <strong>{selectedNode.data.title}</strong>
                         <small>{selectedNode.data.subtitle}</small>
@@ -1102,52 +1404,56 @@ function StudioInner() {
                       <>
                         <div
                           className={
-                            "health-card " + (metrics.oom ? "danger" : "")
+                            "health-card " +
+                            (animatedMetrics.oom ? "danger" : "")
                           }
                         >
                           <div>
                             <MemoryStick size={17} />
                             <strong>
-                              {metrics.oom ? "Out of memory" : "Memory healthy"}
+                              {animatedMetrics.oom
+                                ? "Out of memory"
+                                : "Memory healthy"}
                             </strong>
                           </div>
                           <p>
-                            {metrics.memory.total.toFixed(1)} GB required on
-                            each {config.hardware.vram} GB GPU.{" "}
-                            {metrics.oom
-                              ? `${Math.abs(metrics.memory.free).toFixed(1)} GB over capacity.`
-                              : `${metrics.memory.free.toFixed(1)} GB free.`}
+                            {animatedMetrics.memory.total.toFixed(1)} GB
+                            required on each {config.hardware.vram} GB GPU.{" "}
+                            {animatedMetrics.oom
+                              ? `${Math.abs(animatedMetrics.memory.free).toFixed(1)} GB over capacity.`
+                              : `${animatedMetrics.memory.free.toFixed(1)} GB free.`}
                           </p>
                         </div>
                         <Section title="GPU memory">
                           <Bar
                             label="Parameters"
-                            value={metrics.memory.parameters}
+                            value={animatedMetrics.memory.parameters}
                             total={config.hardware.vram}
                             color="#a9a3f2"
                           />
                           <Bar
                             label="Gradients"
-                            value={metrics.memory.gradients}
+                            value={animatedMetrics.memory.gradients}
                             total={config.hardware.vram}
                             color="#89bcf2"
                           />
                           <Bar
                             label="Optimizer"
-                            value={metrics.memory.optimizer}
+                            value={animatedMetrics.memory.optimizer}
                             total={config.hardware.vram}
                             color="#e8b66a"
                           />
                           <Bar
                             label="Activations"
-                            value={metrics.memory.activations}
+                            value={animatedMetrics.memory.activations}
                             total={config.hardware.vram}
                             color="#78ceb5"
                           />
                           <Bar
                             label="Temporary"
                             value={
-                              metrics.memory.temporary + metrics.memory.runtime
+                              animatedMetrics.memory.temporary +
+                              animatedMetrics.memory.runtime
                             }
                             total={config.hardware.vram}
                             color="#d99ba9"
@@ -1175,7 +1481,7 @@ function StudioInner() {
                           />
                           <div className="readout">
                             <span>Total steps</span>
-                            <strong>{format(metrics.steps)}</strong>
+                            <strong>{format(animatedMetrics.steps)}</strong>
                           </div>
                         </Section>
                         <button
@@ -1240,16 +1546,18 @@ function StudioInner() {
                             <strong>
                               {sk === "transformer"
                                 ? format(
-                                    metrics.breakdown.attention +
-                                      metrics.breakdown.ffn,
+                                    animatedMetrics.breakdown.attention +
+                                      animatedMetrics.breakdown.ffn,
                                   )
                                 : sk === "embedding"
-                                  ? format(metrics.breakdown.embeddings)
+                                  ? format(animatedMetrics.breakdown.embeddings)
                                   : sk === "attention"
-                                    ? format(metrics.breakdown.attention)
+                                    ? format(
+                                        animatedMetrics.breakdown.attention,
+                                      )
                                     : sk === "ffn"
-                                      ? format(metrics.breakdown.ffn)
-                                      : format(metrics.parameters)}
+                                      ? format(animatedMetrics.breakdown.ffn)
+                                      : format(animatedMetrics.parameters)}
                             </strong>
                           </div>
                           <div className="readout">
@@ -1267,7 +1575,10 @@ function StudioInner() {
                           <div className="readout">
                             <span>Forward time</span>
                             <strong>
-                              {(metrics.forwardSeconds * 1000).toFixed(0)} ms
+                              {(animatedMetrics.forwardSeconds * 1000).toFixed(
+                                0,
+                              )}{" "}
+                              ms
                             </strong>
                           </div>
                         </Section>
@@ -1303,7 +1614,8 @@ function StudioInner() {
                             <div className="readout total">
                               <span>Score matrix per batch</span>
                               <strong>
-                                {metrics.attentionMatrixGB.toFixed(2)} GB
+                                {animatedMetrics.attentionMatrixGB.toFixed(2)}{" "}
+                                GB
                               </strong>
                             </div>
                             <p className="section-note">
@@ -1343,6 +1655,7 @@ function StudioInner() {
                               "Memory-efficient",
                               "Grouped query",
                               "Multi-query",
+                              "MLA",
                               "Sliding window",
                               "Sparse",
                             ]}
@@ -1382,7 +1695,9 @@ function StudioInner() {
                 ) : selectedEdge ? (
                   <>
                     <div className="selection-summary">
-                      <span className="summary-icon">→</span>
+                      <span className="summary-icon">
+                        <TbArrowsShuffle size={19} aria-hidden="true" />
+                      </span>
                       <div>
                         <strong>Tensor transfer</strong>
                         <small>
@@ -1442,12 +1757,22 @@ function StudioInner() {
                 <Section title="Architecture preset">
                   <SelectField
                     label="Preset"
-                    value={showPresets ? "Choose a preset" : "Choose a preset"}
+                    value="Choose a preset"
                     options={["Choose a preset", ...Object.keys(modelPresets)]}
                     onChange={(v) => {
-                      if (modelPresets[v])
-                        update("model", { ...modelPresets[v], name: v });
-                      setShowPresets(false);
+                      if (modelLibrary[v]) {
+                        chooseModel(v);
+                      } else if (modelPresets[v]) {
+                        setConfig((prev) => ({
+                          ...prev,
+                          model: {
+                            ...initialConfig.model,
+                            ...modelPresets[v],
+                            name: v,
+                          },
+                        }));
+                        setProgress(0);
+                      }
                     }}
                   />
                 </Section>
@@ -1487,6 +1812,20 @@ function StudioInner() {
                     value={config.model.ffn}
                     onChange={(v) => update("model", { ffn: v })}
                   />
+                  {config.model.experts ? (
+                    <>
+                      <Field
+                        label="Experts"
+                        value={config.model.experts}
+                        onChange={(v) => update("model", { experts: v })}
+                      />
+                      <Field
+                        label="Active experts"
+                        value={config.model.activeExperts || 1}
+                        onChange={(v) => update("model", { activeExperts: v })}
+                      />
+                    </>
+                  ) : null}
                   <Field
                     label="Sequence length"
                     value={config.model.sequence}
@@ -1503,6 +1842,7 @@ function StudioInner() {
                       "Memory-efficient",
                       "Grouped query",
                       "Multi-query",
+                      "MLA",
                       "Sliding window",
                       "Sparse",
                     ]}
@@ -1570,23 +1910,27 @@ function StudioInner() {
                 <Section title="Parameter explorer">
                   <div className="readout">
                     <span>Embeddings</span>
-                    <strong>{format(metrics.breakdown.embeddings)}</strong>
+                    <strong>
+                      {format(animatedMetrics.breakdown.embeddings)}
+                    </strong>
                   </div>
                   <div className="readout">
                     <span>Attention</span>
-                    <strong>{format(metrics.breakdown.attention)}</strong>
+                    <strong>
+                      {format(animatedMetrics.breakdown.attention)}
+                    </strong>
                   </div>
                   <div className="readout">
                     <span>Feed forward</span>
-                    <strong>{format(metrics.breakdown.ffn)}</strong>
+                    <strong>{format(animatedMetrics.breakdown.ffn)}</strong>
                   </div>
                   <div className="readout">
                     <span>Normalization</span>
-                    <strong>{format(metrics.breakdown.norm)}</strong>
+                    <strong>{format(animatedMetrics.breakdown.norm)}</strong>
                   </div>
                   <div className="readout total">
                     <span>Total</span>
-                    <strong>{format(metrics.parameters)}</strong>
+                    <strong>{format(animatedMetrics.parameters)}</strong>
                   </div>
                 </Section>
               </>
@@ -1660,11 +2004,11 @@ function StudioInner() {
                   </div>
                   <div className="readout">
                     <span>Total steps</span>
-                    <strong>{format(metrics.steps)}</strong>
+                    <strong>{format(animatedMetrics.steps)}</strong>
                   </div>
                   <div className="readout">
                     <span>Total tokens</span>
-                    <strong>{format(metrics.totalTokens)}</strong>
+                    <strong>{format(animatedMetrics.totalTokens)}</strong>
                   </div>
                 </Section>
               </>
@@ -1864,7 +2208,7 @@ function StudioInner() {
               <>
                 <div className="hint-card">
                   Topology and communication reduce scaling efficiency. Tune the
-                  strategy to fit the model across {metrics.gpus} GPUs.
+                  strategy to fit the model across {animatedMetrics.gpus} GPUs.
                 </div>
                 <Section title="Parallelism strategy">
                   <Field
@@ -1905,30 +2249,34 @@ function StudioInner() {
                   </div>
                   <div className="readout">
                     <span>Available devices</span>
-                    <strong>{metrics.gpus}</strong>
+                    <strong>{animatedMetrics.gpus}</strong>
                   </div>
                   <div className="readout">
                     <span>Scaling efficiency</span>
-                    <strong>{Math.round(metrics.efficiency * 100)}%</strong>
+                    <strong>
+                      {Math.round(animatedMetrics.efficiency * 100)}%
+                    </strong>
                   </div>
                   <div className="readout">
                     <span>Communication / step</span>
-                    <strong>{metrics.communicationSeconds.toFixed(2)} s</strong>
+                    <strong>
+                      {animatedMetrics.communicationSeconds.toFixed(2)} s
+                    </strong>
                   </div>
                 </Section>
                 {config.distributed.dp *
                   config.distributed.tp *
                   config.distributed.pp *
                   config.distributed.ep !==
-                  metrics.gpus && (
+                  animatedMetrics.gpus && (
                   <div className="health-card danger">
                     <div>
                       <ShieldAlert size={17} />
                       <strong>Device mapping mismatch</strong>
                     </div>
                     <p>
-                      DP × TP × PP × EP should equal {metrics.gpus} available
-                      GPUs.
+                      DP × TP × PP × EP should equal {animatedMetrics.gpus}{" "}
+                      available GPUs.
                     </p>
                   </div>
                 )}
@@ -1938,12 +2286,12 @@ function StudioInner() {
           <div className="inspector-footer">
             <div>
               <span>EST. TRAINING TIME</span>
-              <strong>{duration(metrics.hours)}</strong>
+              <strong>{duration(animatedMetrics.hours)}</strong>
             </div>
             <div>
               <span>BOTTLENECK</span>
-              <strong className={metrics.oom ? "error" : ""}>
-                {metrics.bottleneck}
+              <strong className={animatedMetrics.oom ? "error" : ""}>
+                {animatedMetrics.bottleneck}
               </strong>
             </div>
           </div>
@@ -1982,42 +2330,46 @@ function StudioInner() {
                 <div className="timeline-info">
                   <strong>Iteration profile</strong>
                   <span>
-                    {metrics.stepSeconds.toFixed(2)} s / step ·{" "}
-                    {format(metrics.tokensPerSecond)} tokens/s ·{" "}
-                    {Math.round(metrics.utilization * 100)}% GPU utilization
+                    {animatedMetrics.stepSeconds.toFixed(2)} s / step ·{" "}
+                    {format(animatedMetrics.tokensPerSecond)} tokens/s ·{" "}
+                    {Math.round(animatedMetrics.utilization * 100)}% GPU
+                    utilization
                   </span>
                 </div>
-                {Array.from({ length: Math.min(4, metrics.gpus) }, (_, i) => (
-                  <div className="timeline-row" key={i}>
-                    <span>GPU {i}</span>
-                    <div className="timeline-track">
-                      <i
-                        className="forward-segment"
-                        style={{
-                          width: `${(metrics.forwardSeconds / metrics.stepSeconds) * 100}%`,
-                        }}
-                      />
-                      <i
-                        className="backward-segment"
-                        style={{
-                          width: `${(metrics.backwardSeconds / metrics.stepSeconds) * 100}%`,
-                        }}
-                      />
-                      <i
-                        className="comm-segment"
-                        style={{
-                          width: `${(metrics.communicationSeconds / metrics.stepSeconds) * 100}%`,
-                        }}
-                      />
-                      <i
-                        className="opt-segment"
-                        style={{
-                          width: `${(metrics.optimizerSeconds / metrics.stepSeconds) * 100}%`,
-                        }}
-                      />
+                {Array.from(
+                  { length: Math.min(4, animatedMetrics.gpus) },
+                  (_, i) => (
+                    <div className="timeline-row" key={i}>
+                      <span>GPU {i}</span>
+                      <div className="timeline-track">
+                        <i
+                          className="forward-segment"
+                          style={{
+                            width: `${(animatedMetrics.forwardSeconds / animatedMetrics.stepSeconds) * 100}%`,
+                          }}
+                        />
+                        <i
+                          className="backward-segment"
+                          style={{
+                            width: `${(animatedMetrics.backwardSeconds / animatedMetrics.stepSeconds) * 100}%`,
+                          }}
+                        />
+                        <i
+                          className="comm-segment"
+                          style={{
+                            width: `${(animatedMetrics.communicationSeconds / animatedMetrics.stepSeconds) * 100}%`,
+                          }}
+                        />
+                        <i
+                          className="opt-segment"
+                          style={{
+                            width: `${(animatedMetrics.optimizerSeconds / animatedMetrics.stepSeconds) * 100}%`,
+                          }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ),
+                )}
                 <div className="timeline-legend">
                   <span>
                     <i className="forward-segment" />
@@ -2042,23 +2394,31 @@ function StudioInner() {
               <div className="drawer-grid">
                 <div>
                   <small>PARAMETERS</small>
-                  <strong>{metrics.memory.parameters.toFixed(1)} GB</strong>
+                  <strong>
+                    {animatedMetrics.memory.parameters.toFixed(1)} GB
+                  </strong>
                 </div>
                 <div>
                   <small>GRADIENTS</small>
-                  <strong>{metrics.memory.gradients.toFixed(1)} GB</strong>
+                  <strong>
+                    {animatedMetrics.memory.gradients.toFixed(1)} GB
+                  </strong>
                 </div>
                 <div>
                   <small>OPTIMIZER</small>
-                  <strong>{metrics.memory.optimizer.toFixed(1)} GB</strong>
+                  <strong>
+                    {animatedMetrics.memory.optimizer.toFixed(1)} GB
+                  </strong>
                 </div>
                 <div>
                   <small>ACTIVATIONS</small>
-                  <strong>{metrics.memory.activations.toFixed(1)} GB</strong>
+                  <strong>
+                    {animatedMetrics.memory.activations.toFixed(1)} GB
+                  </strong>
                 </div>
                 <div>
                   <small>CHECKPOINT</small>
-                  <strong>{metrics.checkpointGB.toFixed(1)} GB</strong>
+                  <strong>{animatedMetrics.checkpointGB.toFixed(1)} GB</strong>
                 </div>
               </div>
             )}
@@ -2066,23 +2426,25 @@ function StudioInner() {
               <div className="drawer-grid">
                 <div>
                   <small>EMBEDDINGS</small>
-                  <strong>{format(metrics.breakdown.embeddings)}</strong>
+                  <strong>
+                    {format(animatedMetrics.breakdown.embeddings)}
+                  </strong>
                 </div>
                 <div>
                   <small>ATTENTION</small>
-                  <strong>{format(metrics.breakdown.attention)}</strong>
+                  <strong>{format(animatedMetrics.breakdown.attention)}</strong>
                 </div>
                 <div>
                   <small>FFN</small>
-                  <strong>{format(metrics.breakdown.ffn)}</strong>
+                  <strong>{format(animatedMetrics.breakdown.ffn)}</strong>
                 </div>
                 <div>
                   <small>NORM</small>
-                  <strong>{format(metrics.breakdown.norm)}</strong>
+                  <strong>{format(animatedMetrics.breakdown.norm)}</strong>
                 </div>
                 <div>
                   <small>TOTAL</small>
-                  <strong>{format(metrics.parameters)}</strong>
+                  <strong>{format(animatedMetrics.parameters)}</strong>
                 </div>
               </div>
             )}
@@ -2098,28 +2460,33 @@ function StudioInner() {
                       [
                         "Parameters",
                         baseline.parameters,
-                        metrics.parameters,
+                        animatedMetrics.parameters,
                         format,
                       ],
                       [
                         "VRAM / GPU",
                         baseline.memory,
-                        metrics.memory.total,
+                        animatedMetrics.memory.total,
                         (v: number) => v.toFixed(1) + " GB",
                       ],
                       [
                         "Tokens / second",
                         baseline.throughput,
-                        metrics.tokensPerSecond,
+                        animatedMetrics.tokensPerSecond,
                         format,
                       ],
                       [
                         "Training time",
                         baseline.hours,
-                        metrics.hours,
+                        animatedMetrics.hours,
                         duration,
                       ],
-                      ["Total cost", baseline.cost, metrics.cost, money],
+                      [
+                        "Total cost",
+                        baseline.cost,
+                        animatedMetrics.cost,
+                        money,
+                      ],
                     ].map(([label, before, after, formatter]) => (
                       <div className="compare-row" key={String(label)}>
                         <span>{String(label)}</span>
@@ -2164,17 +2531,18 @@ function StudioInner() {
                   {config.seed}
                 </p>
                 <p>
-                  <span>00:01</span> {metrics.gpus} × {config.hardware.gpu}{" "}
-                  allocated
+                  <span>00:01</span> {animatedMetrics.gpus} ×{" "}
+                  {config.hardware.gpu} allocated
                 </p>
                 <p>
                   <span>00:02</span>{" "}
-                  {metrics.oom
-                    ? `OOM: ${Math.abs(metrics.memory.free).toFixed(1)} GB over VRAM limit`
-                    : `Memory fit: ${metrics.memory.free.toFixed(1)} GB headroom per GPU`}
+                  {animatedMetrics.oom
+                    ? `OOM: ${Math.abs(animatedMetrics.memory.free).toFixed(1)} GB over VRAM limit`
+                    : `Memory fit: ${animatedMetrics.memory.free.toFixed(1)} GB headroom per GPU`}
                 </p>
                 <p>
-                  <span>00:03</span> Estimated bottleneck: {metrics.bottleneck}
+                  <span>00:03</span> Estimated bottleneck:{" "}
+                  {animatedMetrics.bottleneck}
                 </p>
               </div>
             )}
@@ -2184,14 +2552,15 @@ function StudioInner() {
       <div className="utility-bar">
         <div className="utility-left">
           <span className="ready-pill">
-            <span /> {metrics.oom ? "OOM predicted" : "Simulation ready"}
+            <span />{" "}
+            {animatedMetrics.oom ? "OOM predicted" : "Simulation ready"}
           </span>
           <span className="utility-divider" />
-          <span>{metrics.gpus} GPUs</span>
+          <span>{animatedMetrics.gpus} GPUs</span>
           <span>·</span>
-          <span>{Math.round(metrics.efficiency * 100)}% scaling</span>
+          <span>{Math.round(animatedMetrics.efficiency * 100)}% scaling</span>
           <span>·</span>
-          <span>{format(metrics.energyKWh)} kWh</span>
+          <span>{format(animatedMetrics.energyKWh)} kWh</span>
         </div>
         <div className="utility-right">
           <select

@@ -10,9 +10,11 @@ The interface is a compact canvas for technical exploration rather than a static
 - Connectable node handles for documenting tensor flow and hardware flow.
 - Tensor shape mode with representative shapes such as `[B, T]`, `[B, T, D]`, and `[B, H, T, T]`.
 - Configuration panels for model dimensions, tokenizer settings, dataset size, training schedule, optimizer, precision, GPU presets, cluster pricing, and distributed parallelism.
-- Model presets from tiny transformers through approximate 70B architectures, plus GPT-style, LLaMA-style, Mistral-style, MoE, encoder-only, and encoder-decoder starting points.
+- A top-level reference model picker for GPT-2 124M, Llama 3.1 8B, Mistral 7B, Gemma 2 9B, Qwen 2.5 72B, and DeepSeek-V3 671B. Choosing one replaces the model, tokenizer, corpus, and canvas graph with that architecture's reference values.
+- Compact architecture presets from tiny transformers through approximate 70B models, plus GPT-style, LLaMA-style, Mistral-style, MoE, encoder-only, and encoder-decoder starting points.
 - Hardware presets for T4, A10, L4, A100, H100, H200, B200-class, and AMD accelerators, with editable specifications and prices.
 - Live estimates for parameter count, parameter groups, per-GPU memory, attention activation memory, GPU utilization, MFU, bandwidth utilization, tokens per second, samples per second, step time, total training time, energy, cost, checkpoint size, and cost per billion tokens.
+- Numeric inspector controls use bounded sliders with readable value outputs. Live telemetry gently moves around the deterministic estimate so memory, throughput, utilization, and spend feel active while you explore.
 - Explicit warnings for VRAM overflow and invalid DP × TP × PP × EP device mappings.
 - A profiler drawer with forward, backward, all-reduce, and optimizer segments, plus memory, parameter, comparison, and log views.
 - A training animation with 1×, 10×, 100×, 1000×, and instant speed controls. The animation exposes deterministic progress, loss, processed tokens, spend, and active graph phases.
@@ -75,7 +77,7 @@ A project file contains the model, tokenizer, dataset, training, hardware, distr
 
 The simulator is deterministic for a given configuration and seed. It is separated from the React UI in [`src/sim/engine.ts`](src/sim/engine.ts) and currently estimates:
 
-- Dense transformer parameter groups, including embeddings, attention projections, feed-forward layers, normalization, and the LM head.
+- Dense and mixture-of-experts parameter groups, including embeddings, attention projections, feed-forward experts, normalization, and the LM head.
 - Precision-dependent parameter, gradient, optimizer, activation, temporary, and runtime memory.
 - Attention activation memory, including the quadratic `T × T` score matrix and memory-saving attention modes.
 - FLOPs per token, compute and bandwidth limits, GPU utilization, MFU, and tokens per second.
@@ -102,7 +104,7 @@ src/
     engine.ts             # Deterministic training and cost calculations
 ```
 
-The UI uses [React Flow](https://reactflow.dev/) for the graph canvas and `lucide-react` for interface icons. PNG export uses `html-to-image`.
+The UI uses [React Flow](https://reactflow.dev/) for the graph canvas, [`lucide-react`](https://lucide.dev/) for utility controls, and [`react-icons`](https://react-icons.github.io/react-icons/) for technology and component marks such as NVIDIA, Hugging Face, PyTorch, DeepSeek, and Mistral. PNG export uses `html-to-image`.
 
 ## Extending Tensorforge
 
