@@ -87,6 +87,7 @@ import {
   type Config,
 } from "@/sim/engine";
 import { resolveNetwork } from "@/sim/topology";
+import { sliderStops } from "./slider-stops";
 import Image from "next/image";
 
 type Kind =
@@ -438,52 +439,6 @@ function makeGroupNode(
   };
 }
 
-const sliderBounds: Record<string, { min: number; max: number; step: number }> =
-  {
-    "Training tokens": { min: 1e9, max: 20e12, step: 1e9 },
-    "Available tokens": { min: 1e9, max: 20e12, step: 1e9 },
-    "Vocabulary size": { min: 8000, max: 300000, step: 1000 },
-    Vocabulary: { min: 8000, max: 300000, step: 1000 },
-    "Hidden size": { min: 128, max: 16384, step: 128 },
-    Layers: { min: 1, max: 128, step: 1 },
-    "Attention heads": { min: 1, max: 128, step: 1 },
-    "KV heads": { min: 1, max: 128, step: 1 },
-    "FFN size": { min: 256, max: 65536, step: 256 },
-    Experts: { min: 1, max: 512, step: 1 },
-    "Active experts": { min: 1, max: 64, step: 1 },
-    "Sequence length": { min: 128, max: 131072, step: 128 },
-    "Special tokens": { min: 0, max: 512, step: 1 },
-    "Characters / token": { min: 1, max: 8, step: 0.1 },
-    "Bytes / token": { min: 1, max: 8, step: 0.1 },
-    "Average document": { min: 128, max: 4096, step: 64 },
-    Epochs: { min: 1, max: 10, step: 1 },
-    "Micro batch / GPU": { min: 1, max: 64, step: 1 },
-    "Global batch": { min: 1, max: 8192, step: 1 },
-    Accumulation: { min: 1, max: 64, step: 1 },
-    "Learning rate": { min: 0.00001, max: 0.003, step: 0.00001 },
-    "Warmup steps": { min: 0, max: 20000, step: 100 },
-    "Weight decay": { min: 0, max: 0.5, step: 0.01 },
-    "Gradient clip": { min: 0, max: 10, step: 0.1 },
-    "Checkpoint every": { min: 100, max: 10000, step: 100 },
-    VRAM: { min: 4, max: 192, step: 4 },
-    "HBM bandwidth": { min: 100, max: 10000, step: 50 },
-    "BF16 compute": { min: 0, max: 5000, step: 10 },
-    "FP8 compute": { min: 0, max: 5000, step: 10 },
-    Power: { min: 50, max: 1500, step: 10 },
-    "GPUs / node": { min: 1, max: 16, step: 1 },
-    Nodes: { min: 1, max: 128, step: 1 },
-    Interconnect: { min: 10, max: 2000, step: 10 },
-    Network: { min: 10, max: 1600, step: 10 },
-    "GPU cost / hour": { min: 0, max: 20, step: 0.05 },
-    "Network / hour": { min: 0, max: 20, step: 0.05 },
-    "Storage / hour": { min: 0, max: 20, step: 0.05 },
-    "CPU / hour": { min: 0, max: 20, step: 0.05 },
-    "Data parallel": { min: 1, max: 128, step: 1 },
-    "Tensor parallel": { min: 1, max: 128, step: 1 },
-    "Pipeline parallel": { min: 1, max: 128, step: 1 },
-    "Sequence parallel": { min: 1, max: 128, step: 1 },
-    "Expert parallel": { min: 1, max: 128, step: 1 },
-  };
 function Field({
   label,
   value,
@@ -504,11 +459,12 @@ function Field({
   hint?: string;
 }) {
   const numeric = typeof value === "number";
-  const preset = sliderBounds[label];
-  const sliderStep = preset?.step ?? step;
-  const sliderMin = min ?? preset?.min ?? 0;
-  const sliderMax =
-    max ?? preset?.max ?? Math.max(Number(value) * 2, sliderStep * 10, 1);
+  const stops = numeric ? sliderStops(label, value, min, max, step) : [];
+  const selectedStop = numeric ? stops.indexOf(value) : 0;
+  const decimals =
+    numeric && (stops.some((stop) => !Number.isInteger(stop)) || step < 1)
+      ? 5
+      : 0;
   return (
     <label className="field">
       <span className="field-label">
@@ -517,7 +473,7 @@ function Field({
         <output className="field-value">
           {numeric
             ? Number(value).toLocaleString(undefined, {
-                maximumFractionDigits: sliderStep < 1 ? 5 : 0,
+                maximumFractionDigits: decimals,
               })
             : value}
           {unit ? ` ${unit}` : ""}
@@ -527,12 +483,12 @@ function Field({
         <input
           className="range-input"
           type="range"
-          value={value}
-          min={sliderMin}
-          max={sliderMax}
-          step={sliderStep}
+          value={selectedStop}
+          min={0}
+          max={stops.length - 1}
+          step={1}
           aria-label={label}
-          onChange={(e) => onChange(Number(e.target.value))}
+          onChange={(e) => onChange(stops[Number(e.target.value)])}
         />
       ) : (
         <div className="input-wrap">
