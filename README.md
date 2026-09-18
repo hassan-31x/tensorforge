@@ -6,10 +6,10 @@ The interface is a compact canvas for technical exploration rather than a static
 
 ## What it includes
 
-- A drag-and-drop model graph for raw text, tokenizers, embeddings, positional encoding, transformer blocks, attention, feed-forward layers, normalization, LM heads, loss, datasets, optimizers, GPU nodes, and clusters.
+- A drag-and-drop model graph for raw text, tokenizers, embeddings, positional encoding, transformer blocks, attention, feed-forward layers, normalization, LM heads, loss, datasets, optimizers, and GPU nodes. A resizable model group frames the architecture.
 - Connectable node handles for documenting tensor flow and hardware flow.
 - Tensor shape mode with representative shapes such as `[B, T]`, `[B, T, D]`, and `[B, H, T, T]`.
-- Configuration panels for model dimensions, tokenizer settings, dataset size, training schedule, optimizer, precision, GPU presets, cluster pricing, and distributed parallelism.
+- Configuration panels for model dimensions, tokenizer settings, dataset size, training schedule, optimizer, precision, GPU presets, per-device specifications, network pricing, and distributed parallelism.
 - A top-level reference model picker for GPT-2 124M, Llama 3.1 8B, Mistral 7B, Gemma 2 9B, Qwen 2.5 72B, and DeepSeek-V3 671B. Choosing one replaces the model, tokenizer, corpus, and canvas graph with that architecture's reference values.
 - Compact architecture presets from tiny transformers through approximate 70B models, plus GPT-style, LLaMA-style, Mistral-style, MoE, encoder-only, and encoder-decoder starting points.
 - Hardware presets for T4, A10, L4, A100, H100, H200, B200-class, and AMD accelerators, with editable specifications and prices.
@@ -45,13 +45,15 @@ npm start
 
 ## Using the studio
 
-1. Start with the model graph in the center. The default project is an approximately 7B decoder setup using BF16 and an 8-GPU H100 node.
+1. Start with the model graph in the center. The default project is an approximately 7B decoder setup using BF16. No GPU is allocated initially, so time and cost estimates start at zero.
 2. Drag a component from the left palette onto the canvas, or click a palette item to add it.
 3. Connect a node's right handle to another node's left handle. Select a node or edge to inspect it.
-4. Use the right-side tabs to change model, dataset, training, hardware, or parallelism settings. Numeric changes recalculate the simulation immediately.
-5. Press **Simulate** to animate execution through the graph. The forward pass, backward pass, all-reduce, and optimizer phases use different colors.
-6. Open **Show profiler** at the bottom for iteration timing, memory and parameter breakdowns, comparisons, and logs.
-7. Use **Compare** in the bottom utility bar to capture a baseline, then change settings to see the current setup against it.
+4. Click **Model group** in the left palette, then drag a rectangle around the complete architecture. Resize it or use **Fit to architecture** in the inspector if needed.
+5. Add GPU nodes and connect each GPU to the group's bottom handle. A disconnected GPU does not affect estimates. Select a GPU to choose its model and inspect its own VRAM use, capacity, and hourly rate.
+6. Use the right-side tabs to change model, dataset, training, hardware, or parallelism settings. Numeric changes recalculate the simulation immediately.
+7. Press **Simulate** to animate execution through the graph. The forward pass, backward pass, all-reduce, and optimizer phases use different colors.
+8. Open **Show profiler** at the bottom for iteration timing, memory and parameter breakdowns, comparisons, and logs.
+9. Use **Compare** in the bottom utility bar to capture a baseline, then change settings to see the current setup against it.
 
 ### Useful experiments
 
@@ -79,6 +81,8 @@ The simulator is deterministic for a given configuration and seed. It is separat
 
 - Dense and mixture-of-experts parameter groups, including embeddings, attention projections, feed-forward experts, normalization, and the LM head.
 - Precision-dependent parameter, gradient, optimizer, activation, temporary, and runtime memory.
+- Connected GPU allocation: the model memory is sharded across connected devices, then compared with each GPU's own VRAM. A small GPU can overflow even when a larger GPU in the same group has headroom.
+- If any connected GPU exceeds its VRAM, training throughput, time, and total cost are unavailable until the configuration fits. The connected devices' hourly rates remain visible.
 - Attention activation memory, including the quadratic `T × T` score matrix and memory-saving attention modes.
 - FLOPs per token, compute and bandwidth limits, GPU utilization, MFU, and tokens per second.
 - Data, tensor, pipeline, sequence, and expert parallelism penalties, including multi-node network overhead.
@@ -113,6 +117,7 @@ To add a model or accelerator preset, update the corresponding map in `src/data/
 Before opening a pull request, run:
 
 ```bash
+npm test
 npm run build
 ```
 

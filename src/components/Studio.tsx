@@ -23,6 +23,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   MarkerType,
+  NodeResizer,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -43,7 +44,6 @@ import {
   Search,
   Settings2,
   Share2,
-  ShieldAlert,
   Sparkles,
   Upload,
   Workflow,
@@ -86,6 +86,7 @@ import {
   duration,
   type Config,
 } from "@/sim/engine";
+import { resolveNetwork } from "@/sim/topology";
 import Image from "next/image";
 
 type Kind =
@@ -103,6 +104,7 @@ type Kind =
   | "gpu"
   | "cluster"
   | "optimizer"
+  | "group"
   | "custom";
 type StudioNode = Node<
   {
@@ -115,8 +117,9 @@ type StudioNode = Node<
     selected?: boolean;
     tensor?: string;
     executing?: boolean;
+    hardware?: Config["hardware"];
   },
-  "studio"
+  "studio" | "group"
 >;
 const catalog: {
   group: string;
@@ -150,8 +153,12 @@ const catalog: {
   {
     group: "TRAINING & COMPUTE",
     items: [
+      {
+        kind: "group",
+        title: "Model group",
+        desc: "Frame the full architecture",
+      },
       { kind: "gpu", title: "GPU node", desc: "Accelerator memory" },
-      { kind: "cluster", title: "GPU cluster", desc: "Distributed system" },
       { kind: "optimizer", title: "Optimizer", desc: "Parameter updates" },
     ],
   },
@@ -171,6 +178,7 @@ const kindIcons: Record<Kind, IconType> = {
   gpu: SiNvidia,
   cluster: TbBinaryTree,
   optimizer: SiPytorch,
+  group: TbBinaryTree,
   custom: TbSparkles,
 };
 const providerIcons: Record<string, IconType> = {
@@ -245,12 +253,6 @@ const initialNodes: StudioNode[] = [
     },
   },
   {
-    id: "gpu",
-    type: "studio",
-    position: { x: 580, y: 370 },
-    data: { kind: "gpu", title: "H100 GPU node", subtitle: "8 GPUs · NVLink" },
-  },
-  {
     id: "optimizer",
     type: "studio",
     position: { x: 1110, y: 385 },
@@ -281,7 +283,6 @@ const initialEdges = [
   edge("transformer", "head"),
   edge("head", "loss"),
   edge("dataset", "input"),
-  edge("gpu", "transformer"),
   edge("loss", "optimizer"),
 ];
 const IconButton = ({
@@ -342,21 +343,6 @@ function NodeCard({ data, selected }: NodeProps<StudioNode>) {
       ) : null}
       {k === "gpu" || k === "cluster" ? (
         <>
-          <div className="gpu-chips">
-            {Array.from(
-              {
-                length: Math.min(
-                  8,
-                  Math.max(1, parseInt(data.subtitle || "1") || 1),
-                ),
-              },
-              (_, i) => (
-                <span key={i} title={`GPU ${i}`}>
-                  <SiNvidia size={10} aria-hidden="true" />
-                </span>
-              ),
-            )}
-          </div>
           <div className="node-meter">
             <span
               style={{
@@ -379,7 +365,78 @@ function NodeCard({ data, selected }: NodeProps<StudioNode>) {
     </div>
   );
 }
-const nodeTypes = { studio: NodeCard };
+function GroupCard({ data, selected }: NodeProps<StudioNode>) {
+  return (
+    <div className={`model-group-card ${selected ? "is-selected" : ""}`}>
+      <NodeResizer isVisible={selected} minWidth={300} minHeight={180} />
+      <div className="model-group-title">
+        <KindIcon kind="group" size={17} />
+        <strong>{data.title}</strong>
+        <span>{data.subtitle}</span>
+      </div>
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        className="node-handle group-handle"
+      />
+    </div>
+  );
+}
+const nodeTypes = { studio: NodeCard, group: GroupCard };
+
+function makeGpuNode(
+  id: string,
+  position: { x: number; y: number },
+  hardware: Config["hardware"],
+  kind: "gpu" | "cluster" = "gpu",
+): StudioNode {
+  return {
+    id,
+    type: "studio",
+    position,
+    data: {
+      kind,
+      title: hardware.gpu,
+      subtitle: `${hardware.vram} GB VRAM · connect to model group`,
+      hardware: { ...hardware },
+    },
+  };
+}
+
+function makeGroupNode(
+  id: string,
+  nodes: StudioNode[],
+  position?: { x: number; y: number },
+): StudioNode {
+  const modelNodes = nodes.filter(
+    (node) => !["gpu", "cluster", "group"].includes(node.data.kind),
+  );
+  const left = Math.min(...modelNodes.map((node) => node.position.x), 0) - 40;
+  const top = Math.min(...modelNodes.map((node) => node.position.y), 0) - 75;
+  const right =
+    Math.max(
+      ...modelNodes.map((node) => node.position.x + (node.width || 218)),
+      600,
+    ) + 45;
+  const bottom =
+    Math.max(
+      ...modelNodes.map((node) => node.position.y + (node.height || 150)),
+      300,
+    ) + 45;
+  return {
+    id,
+    type: "group",
+    position: position || { x: left, y: top },
+    width: position ? 650 : right - left,
+    height: position ? 340 : bottom - top,
+    zIndex: -1,
+    data: {
+      kind: "group",
+      title: "Model group",
+      subtitle: "Connect GPUs to this frame",
+    },
+  };
+}
 
 const sliderBounds: Record<string, { min: number; max: number; step: number }> =
   {
@@ -581,6 +638,16 @@ function StudioInner() {
   >("timeline");
   const [tensorMode, setTensorMode] = useState(false);
   const [showPresets, setShowPresets] = useState(false);
+  const [drawingGroup, setDrawingGroup] = useState(false);
+  const [drawOrigin, setDrawOrigin] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+  const [drawRect, setDrawRect] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [notice, setNotice] = useState("");
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [baseline, setBaseline] = useState<{
@@ -595,9 +662,8 @@ function StudioInner() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const rf = useReactFlow();
   const architecture = useMemo(() => {
-    const connected = new Set(edges.flatMap((e) => [e.source, e.target]));
     const count = (kind: Kind) =>
-      nodes.filter((n) => n.data.kind === kind && connected.has(n.id)).length;
+      nodes.filter((n) => n.data.kind === kind).length;
     return {
       transformer: count("transformer"),
       attention: count("attention"),
@@ -605,10 +671,16 @@ function StudioInner() {
       embedding: count("embedding"),
       head: count("head"),
     };
-  }, [nodes, edges]);
+  }, [nodes]);
+  const network = useMemo(
+    () => resolveNetwork(nodes, edges, config.hardware),
+    [nodes, edges, config.hardware],
+  );
+  const gpuDevices = network.devices;
+  const framedGroupIds = network.framedGroupIds;
   const metrics = useMemo(
-    () => simulate(config, architecture),
-    [config, architecture],
+    () => simulate(config, architecture, gpuDevices),
+    [config, architecture, gpuDevices],
   );
   const live = useCallback(
     (value: number, amplitude = 1, phase = 0) =>
@@ -618,12 +690,24 @@ function StudioInner() {
   const animatedMetrics = useMemo(() => {
     const memory = {
       ...metrics.memory,
-      parameters: Math.max(0, live(metrics.memory.parameters, 0.16, 0.4)),
-      gradients: Math.max(0, live(metrics.memory.gradients, 0.14, 1.2)),
-      optimizer: Math.max(0, live(metrics.memory.optimizer, 0.12, 2.1)),
-      activations: Math.max(0, live(metrics.memory.activations, 0.2, 2.8)),
-      temporary: Math.max(0, live(metrics.memory.temporary, 0.08, 3.4)),
-      runtime: Math.max(0, live(metrics.memory.runtime, 0.04, 4.1)),
+      parameters: metrics.gpus
+        ? Math.max(0, live(metrics.memory.parameters, 0.16, 0.4))
+        : 0,
+      gradients: metrics.gpus
+        ? Math.max(0, live(metrics.memory.gradients, 0.14, 1.2))
+        : 0,
+      optimizer: metrics.gpus
+        ? Math.max(0, live(metrics.memory.optimizer, 0.12, 2.1))
+        : 0,
+      activations: metrics.gpus
+        ? Math.max(0, live(metrics.memory.activations, 0.2, 2.8))
+        : 0,
+      temporary: metrics.gpus
+        ? Math.max(0, live(metrics.memory.temporary, 0.08, 3.4))
+        : 0,
+      runtime: metrics.gpus
+        ? Math.max(0, live(metrics.memory.runtime, 0.04, 4.1))
+        : 0,
     };
     memory.total =
       memory.parameters +
@@ -632,7 +716,11 @@ function StudioInner() {
       memory.activations +
       memory.temporary +
       memory.runtime;
-    memory.free = config.hardware.vram - memory.total;
+    memory.free = metrics.gpuDevices.length
+      ? Math.min(
+          ...metrics.gpuDevices.map((device) => device.vram - memory.total),
+        )
+      : 0;
     return {
       ...metrics,
       parameters: Math.max(
@@ -644,31 +732,50 @@ function StudioInner() {
         ),
       ),
       memory,
-      utilization: Math.max(
-        0,
-        Math.min(1, live(metrics.utilization, 0.008, 1.3)),
-      ),
-      mfu: Math.max(0, Math.min(1, live(metrics.mfu, 0.006, 2.4))),
-      bandwidthUtil: Math.max(
-        0,
-        Math.min(1, live(metrics.bandwidthUtil, 0.01, 3.1)),
-      ),
-      tokensPerSecond: Math.max(
-        1,
-        live(
-          metrics.tokensPerSecond,
-          Math.max(1, metrics.tokensPerSecond * 0.012),
-          1.7,
-        ),
-      ),
-      cost: Math.max(
-        0,
-        live(metrics.cost, Math.max(0.15, metrics.cost * 0.004), 2.9),
-      ),
-      energyKWh: Math.max(
-        0,
-        live(metrics.energyKWh, Math.max(0.05, metrics.energyKWh * 0.005), 3.6),
-      ),
+      utilization:
+        metrics.oom || !metrics.gpus
+          ? 0
+          : Math.max(0, Math.min(1, live(metrics.utilization, 0.008, 1.3))),
+      mfu:
+        metrics.oom || !metrics.gpus
+          ? 0
+          : Math.max(0, Math.min(1, live(metrics.mfu, 0.006, 2.4))),
+      bandwidthUtil:
+        metrics.oom || !metrics.gpus
+          ? 0
+          : Math.max(0, Math.min(1, live(metrics.bandwidthUtil, 0.01, 3.1))),
+      tokensPerSecond:
+        metrics.gpus && !metrics.oom
+          ? Math.max(
+              0,
+              live(
+                metrics.tokensPerSecond,
+                Math.max(1, metrics.tokensPerSecond * 0.012),
+                1.7,
+              ),
+            )
+          : 0,
+      cost:
+        metrics.gpus && !metrics.oom
+          ? Math.max(
+              0,
+              live(metrics.cost, Math.max(0.15, metrics.cost * 0.004), 2.9),
+            )
+          : 0,
+      hourlyCost: metrics.gpus
+        ? Math.max(0, live(metrics.hourlyCost, 0.05, 2.9))
+        : 0,
+      energyKWh:
+        metrics.gpus && !metrics.oom
+          ? Math.max(
+              0,
+              live(
+                metrics.energyKWh,
+                Math.max(0.05, metrics.energyKWh * 0.005),
+                3.6,
+              ),
+            )
+          : 0,
       attentionMatrixGB: Math.max(
         0,
         live(metrics.attentionMatrixGB, 0.08, 4.4),
@@ -717,7 +824,7 @@ function StudioInner() {
         ),
       },
     };
-  }, [config.hardware.vram, live, metrics]);
+  }, [live, metrics]);
   const training = useMemo(
     () => trainingAtProgress(config, metrics, progress / 100),
     [config, metrics, progress],
@@ -754,6 +861,18 @@ function StudioInner() {
     return () => window.clearInterval(id);
   }, []);
   useEffect(() => {
+    if (!drawingGroup) return;
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDrawingGroup(false);
+        setDrawOrigin(null);
+        setDrawRect(null);
+      }
+    };
+    window.addEventListener("keydown", cancel);
+    return () => window.removeEventListener("keydown", cancel);
+  }, [drawingGroup]);
+  useEffect(() => {
     try {
       const raw = localStorage.getItem("tensorforge-project");
       if (raw) {
@@ -767,6 +886,9 @@ function StudioInner() {
   useEffect(() => {
     if (progress >= 100 && playing) setPlaying(false);
   }, [progress, playing]);
+  useEffect(() => {
+    if ((!metrics.gpus || metrics.oom) && playing) setPlaying(false);
+  }, [metrics.gpus, metrics.oom, playing]);
   useEffect(() => {
     if (!playing) return;
     const delay =
@@ -857,9 +979,22 @@ function StudioInner() {
           detail = `${format(animatedMetrics.steps)} steps`;
         }
         if (kind === "gpu" || kind === "cluster") {
-          subtitle = `${animatedMetrics.gpus} × ${config.hardware.gpu}`;
-          metric = `${Math.round((animatedMetrics.memory.total / config.hardware.vram) * 100)}%`;
-          detail = `${Math.round(animatedMetrics.utilization * 100)}% compute`;
+          const hardware = n.data.hardware || config.hardware;
+          const active = metrics.gpuDevices.find(
+            (device) => device.id === n.id,
+          );
+          subtitle = `${hardware.gpu} · ${hardware.vram} GB VRAM`;
+          metric = active
+            ? `${Math.round((animatedMetrics.memory.total / hardware.vram) * 100)}%`
+            : "0%";
+          detail = active
+            ? `${animatedMetrics.memory.total.toFixed(1)} / ${hardware.vram} GB`
+            : "Not connected";
+        }
+        if (kind === "group") {
+          metric = framedGroupIds.includes(n.id)
+            ? `${gpuDevices.length} GPU${gpuDevices.length === 1 ? "" : "s"} connected`
+            : "Resize to frame architecture";
         }
         if (kind === "optimizer") {
           subtitle = config.training.optimizer + " · " + config.model.precision;
@@ -896,14 +1031,38 @@ function StudioInner() {
             detail,
             executing: playing && activeKinds[phaseIndex].includes(kind),
             warning:
-              (kind === "gpu" || kind === "cluster") && animatedMetrics.oom,
+              (kind === "gpu" || kind === "cluster") &&
+              !!metrics.gpuDevices.find((device) => device.id === n.id)?.oom,
           },
         };
       }),
-    [nodes, config, animatedMetrics, tensorMode, playing, progress],
+    [
+      nodes,
+      config,
+      animatedMetrics,
+      metrics.gpuDevices,
+      framedGroupIds,
+      gpuDevices.length,
+      tensorMode,
+      playing,
+      progress,
+    ],
   );
   const onConnect = useCallback(
-    (connection: Connection) =>
+    (connection: Connection) => {
+      const sourceKind = nodes.find((node) => node.id === connection.source)
+        ?.data.kind;
+      const targetKind = nodes.find((node) => node.id === connection.target)
+        ?.data.kind;
+      const gpuLink =
+        (sourceKind === "gpu" || sourceKind === "cluster") &&
+        targetKind === "group";
+      const modelLink =
+        sourceKind &&
+        targetKind &&
+        !["gpu", "cluster", "group"].includes(sourceKind) &&
+        !["gpu", "cluster", "group"].includes(targetKind);
+      if (!gpuLink && !modelLink) return;
       setEdges((eds) =>
         addEdge(
           {
@@ -915,8 +1074,9 @@ function StudioInner() {
           },
           eds,
         ),
-      ),
-    [setEdges],
+      );
+    },
+    [nodes, setEdges],
   );
   const onDrop = useCallback(
     (e: React.DragEvent) => {
@@ -930,17 +1090,21 @@ function StudioInner() {
       const id = `${kind}-${Date.now()}`;
       setNodes((ns) => [
         ...ns,
-        {
-          id,
-          type: "studio",
-          position,
-          data: { kind, title, subtitle: "Configure in inspector" },
-        },
+        kind === "group"
+          ? makeGroupNode(id, ns, position)
+          : kind === "gpu" || kind === "cluster"
+            ? makeGpuNode(id, position, config.hardware, kind)
+            : {
+                id,
+                type: "studio",
+                position,
+                data: { kind, title, subtitle: "Configure in inspector" },
+              },
       ]);
       setSelected(id);
       setActivePanel("inspect");
     },
-    [rf, setNodes],
+    [config.hardware, rf, setNodes],
   );
   const save = () => {
     localStorage.setItem(
@@ -1042,6 +1206,44 @@ function StudioInner() {
   const selectedNode = displayNodes.find((n) => n.id === selected);
   const selectedEdge = edges.find((e) => e.id === selected);
   const sk = selectedNode?.data.kind;
+  const selectedGpuNode = nodes.find(
+    (node) =>
+      node.id === selected &&
+      (node.data.kind === "gpu" || node.data.kind === "cluster"),
+  );
+  const hardwareView = selectedGpuNode?.data.hardware || config.hardware;
+  const updateHardware = (patch: Partial<Config["hardware"]>) => {
+    if (!selectedGpuNode) {
+      update("hardware", patch);
+      return;
+    }
+    if (
+      "network" in patch ||
+      "networkCost" in patch ||
+      "storageCost" in patch ||
+      "cpuCost" in patch ||
+      "link" in patch
+    ) {
+      update("hardware", patch);
+    }
+    setNodes((current) =>
+      current.map((node) =>
+        node.id === selectedGpuNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                title: patch.gpu || node.data.title,
+                hardware: {
+                  ...(node.data.hardware || config.hardware),
+                  ...patch,
+                },
+              },
+            }
+          : node,
+      ),
+    );
+  };
   const tabs: [typeof activePanel, string][] = [
     ["inspect", "Inspector"],
     ["model", "Model"],
@@ -1117,12 +1319,22 @@ function StudioInner() {
             </strong>
           </div>
           <div>
-            <small>GPU MEMORY</small>
+            <small>NETWORK VRAM</small>
             <strong className={animatedMetrics.oom ? "error" : ""}>
               <span className="telemetry-value">
-                {animatedMetrics.memory.total.toFixed(1)}
+                {metrics.capacity
+                  ? Math.round(
+                      ((animatedMetrics.memory.total * metrics.gpus) /
+                        metrics.capacity) *
+                        100,
+                    )
+                  : 0}
+                %
               </span>{" "}
-              <span>/ {config.hardware.vram} GB</span>
+              <span>
+                {(animatedMetrics.memory.total * metrics.gpus).toFixed(1)} /{" "}
+                {metrics.capacity} GB
+              </span>
             </strong>
           </div>
           <div>
@@ -1135,9 +1347,9 @@ function StudioInner() {
             </strong>
           </div>
           <div>
-            <small>EST. COST</small>
+            <small>RUN COST / HOUR</small>
             <strong className="telemetry-value">
-              {money(animatedMetrics.cost)}
+              ${animatedMetrics.hourlyCost.toFixed(2)}
             </strong>
           </div>
         </div>
@@ -1161,6 +1373,14 @@ function StudioInner() {
           </button>
           <button
             className="run-btn"
+            disabled={!metrics.gpus || metrics.oom}
+            title={
+              !metrics.gpus
+                ? "Connect a GPU to a model group first"
+                : metrics.oom
+                  ? "Model exceeds connected GPU memory"
+                  : undefined
+            }
             onClick={() => {
               if (progress >= 100) setProgress(0);
               setPlaying(!playing);
@@ -1216,24 +1436,64 @@ function StudioInner() {
                       }}
                       className={"palette-item " + i.kind}
                       onClick={() => {
+                        if (i.kind === "group") {
+                          setDrawingGroup(true);
+                          setDrawOrigin(null);
+                          setDrawRect(null);
+                          return;
+                        }
                         const id = `${i.kind}-${Date.now()}`;
-                        setNodes((ns) => [
-                          ...ns,
-                          {
-                            id,
-                            type: "studio",
-                            position: rf.screenToFlowPosition({
-                              x: window.innerWidth / 2,
-                              y: window.innerHeight / 2,
-                            }),
-                            data: {
-                              kind: i.kind,
-                              title: i.title,
-                              subtitle: i.desc,
-                            },
-                          },
-                        ]);
+                        setNodes((ns) => {
+                          const group = ns.find(
+                            (node) => node.data.kind === "group",
+                          );
+                          const gpuCount = ns.filter(
+                            (node) =>
+                              node.data.kind === "gpu" ||
+                              node.data.kind === "cluster",
+                          ).length;
+                          const position =
+                            group && (i.kind === "gpu" || i.kind === "cluster")
+                              ? {
+                                  x: group.position.x + 60 + gpuCount * 255,
+                                  y:
+                                    group.position.y +
+                                    (group.measured?.height ||
+                                      group.height ||
+                                      340) +
+                                    90,
+                                }
+                              : rf.screenToFlowPosition({
+                                  x: window.innerWidth / 2,
+                                  y: window.innerHeight / 2,
+                                });
+                          const next =
+                            i.kind === "group"
+                              ? makeGroupNode(id, ns)
+                              : i.kind === "gpu" || i.kind === "cluster"
+                                ? makeGpuNode(
+                                    id,
+                                    position,
+                                    config.hardware,
+                                    i.kind,
+                                  )
+                                : {
+                                    id,
+                                    type: "studio" as const,
+                                    position,
+                                    data: {
+                                      kind: i.kind,
+                                      title: i.title,
+                                      subtitle: i.desc,
+                                    },
+                                  };
+                          return [...ns, next];
+                        });
                         setSelected(id);
+                        window.setTimeout(
+                          () => rf.fitView({ padding: 0.16, duration: 250 }),
+                          40,
+                        );
                       }}
                     >
                       <span className="palette-icon">
@@ -1252,7 +1512,7 @@ function StudioInner() {
           </div>
           <div className="palette-bottom">
             <Sparkles size={14} />
-            <span>Drag onto canvas or click to add</span>
+            <span>Click group, then draw around the model</span>
           </div>
         </aside>
         <main
@@ -1271,6 +1531,7 @@ function StudioInner() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            elevateNodesOnSelect={false}
             onNodeClick={(_, n) => {
               setSelected(n.id);
               setActivePanel("inspect");
@@ -1305,6 +1566,80 @@ function StudioInner() {
               maskColor="rgba(11,18,20,.6)"
             />
           </ReactFlow>
+          {drawingGroup && (
+            <div
+              className="group-draw-layer"
+              onPointerDown={(event) => {
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const origin = {
+                  x: event.clientX - bounds.left,
+                  y: event.clientY - bounds.top,
+                };
+                event.currentTarget.setPointerCapture(event.pointerId);
+                setDrawOrigin(origin);
+                setDrawRect({ ...origin, width: 0, height: 0 });
+              }}
+              onPointerMove={(event) => {
+                if (!drawOrigin) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const x = event.clientX - bounds.left;
+                const y = event.clientY - bounds.top;
+                setDrawRect({
+                  x: Math.min(drawOrigin.x, x),
+                  y: Math.min(drawOrigin.y, y),
+                  width: Math.abs(x - drawOrigin.x),
+                  height: Math.abs(y - drawOrigin.y),
+                });
+              }}
+              onPointerUp={(event) => {
+                if (!drawOrigin) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const end = {
+                  x: event.clientX - bounds.left,
+                  y: event.clientY - bounds.top,
+                };
+                const x = Math.min(drawOrigin.x, end.x);
+                const y = Math.min(drawOrigin.y, end.y);
+                const startFlow = rf.screenToFlowPosition({
+                  x: bounds.left + x,
+                  y: bounds.top + y,
+                });
+                const endFlow = rf.screenToFlowPosition({
+                  x: bounds.left + Math.max(drawOrigin.x, end.x),
+                  y: bounds.top + Math.max(drawOrigin.y, end.y),
+                });
+                const id = `group-${Date.now()}`;
+                setNodes((current) => [
+                  ...current,
+                  {
+                    ...makeGroupNode(id, current, startFlow),
+                    width: Math.max(300, endFlow.x - startFlow.x),
+                    height: Math.max(180, endFlow.y - startFlow.y),
+                  },
+                ]);
+                setSelected(id);
+                setActivePanel("inspect");
+                setDrawingGroup(false);
+                setDrawOrigin(null);
+                setDrawRect(null);
+              }}
+            >
+              <div className="group-draw-hint">
+                Drag to frame the architecture · Esc to cancel
+              </div>
+              {drawRect && (
+                <div
+                  className="group-draw-preview"
+                  style={{
+                    left: drawRect.x,
+                    top: drawRect.y,
+                    width: drawRect.width,
+                    height: drawRect.height,
+                  }}
+                />
+              )}
+            </div>
+          )}
           <div className="canvas-label">
             <span className="live-dot" /> MODEL GRAPH{" "}
             <span className="label-divider">/</span> {nodes.length} components ·{" "}
@@ -1400,62 +1735,166 @@ function StudioInner() {
                         <small>{selectedNode.data.subtitle}</small>
                       </div>
                     </div>
-                    {sk === "gpu" || sk === "cluster" ? (
+                    {sk === "group" ? (
+                      <div className="group-inspector">
+                        <strong>
+                          {framedGroupIds.includes(selected!)
+                            ? "Architecture framed"
+                            : "Frame the architecture"}
+                        </strong>
+                        <p>
+                          Resize this group around every model component, then
+                          connect GPU nodes to its bottom handle. Only connected
+                          GPUs count toward estimates.
+                        </p>
+                        <div className="readout">
+                          <span>Connected GPUs</span>
+                          <strong>{gpuDevices.length}</strong>
+                        </div>
+                        <button
+                          className="wide-link"
+                          onClick={() => {
+                            setNodes((current) => {
+                              const fitted = makeGroupNode(selected!, current);
+                              return current.map((node) =>
+                                node.id === selected
+                                  ? {
+                                      ...node,
+                                      position: fitted.position,
+                                      width: fitted.width,
+                                      height: fitted.height,
+                                    }
+                                  : node,
+                              );
+                            });
+                          }}
+                        >
+                          Fit to architecture <Maximize2 size={14} />
+                        </button>
+                      </div>
+                    ) : sk === "gpu" || sk === "cluster" ? (
                       <>
+                        <Section title="Device">
+                          <SelectField
+                            label="GPU model"
+                            value={hardwareView.gpu}
+                            options={Object.keys(gpuPresets)}
+                            onChange={(value) =>
+                              updateHardware({
+                                gpu: value,
+                                ...gpuPresets[value],
+                              })
+                            }
+                          />
+                          <div className="readout">
+                            <span>Connection</span>
+                            <strong>
+                              {metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? "Active"
+                                : "Not connected"}
+                            </strong>
+                          </div>
+                          <div className="readout">
+                            <span>Hourly rate</span>
+                            <strong>
+                              ${hardwareView.hourlyCost.toFixed(2)} / hr
+                            </strong>
+                          </div>
+                        </Section>
                         <div
                           className={
                             "health-card " +
-                            (animatedMetrics.oom ? "danger" : "")
+                            (metrics.gpuDevices.find(
+                              (device) => device.id === selected,
+                            )?.oom
+                              ? "danger"
+                              : "")
                           }
                         >
                           <div>
                             <MemoryStick size={17} />
                             <strong>
-                              {animatedMetrics.oom
-                                ? "Out of memory"
-                                : "Memory healthy"}
+                              {!metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? "Connect to model group"
+                                : metrics.gpuDevices.find(
+                                      (device) => device.id === selected,
+                                    )?.oom
+                                  ? "Out of memory"
+                                  : "Memory healthy"}
                             </strong>
                           </div>
                           <p>
-                            {animatedMetrics.memory.total.toFixed(1)} GB
-                            required on each {config.hardware.vram} GB GPU.{" "}
-                            {animatedMetrics.oom
-                              ? `${Math.abs(animatedMetrics.memory.free).toFixed(1)} GB over capacity.`
-                              : `${animatedMetrics.memory.free.toFixed(1)} GB free.`}
+                            {metrics.gpuDevices.some(
+                              (device) => device.id === selected,
+                            )
+                              ? `${animatedMetrics.memory.total.toFixed(1)} GB used of ${hardwareView.vram} GB. ${(hardwareView.vram - animatedMetrics.memory.total).toFixed(1)} GB free.`
+                              : "Connect this GPU to a group that surrounds the full model."}
                           </p>
                         </div>
                         <Section title="GPU memory">
                           <Bar
                             label="Parameters"
-                            value={animatedMetrics.memory.parameters}
-                            total={config.hardware.vram}
+                            value={
+                              metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? animatedMetrics.memory.parameters
+                                : 0
+                            }
+                            total={hardwareView.vram}
                             color="#a9a3f2"
                           />
                           <Bar
                             label="Gradients"
-                            value={animatedMetrics.memory.gradients}
-                            total={config.hardware.vram}
+                            value={
+                              metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? animatedMetrics.memory.gradients
+                                : 0
+                            }
+                            total={hardwareView.vram}
                             color="#89bcf2"
                           />
                           <Bar
                             label="Optimizer"
-                            value={animatedMetrics.memory.optimizer}
-                            total={config.hardware.vram}
+                            value={
+                              metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? animatedMetrics.memory.optimizer
+                                : 0
+                            }
+                            total={hardwareView.vram}
                             color="#e8b66a"
                           />
                           <Bar
                             label="Activations"
-                            value={animatedMetrics.memory.activations}
-                            total={config.hardware.vram}
+                            value={
+                              metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? animatedMetrics.memory.activations
+                                : 0
+                            }
+                            total={hardwareView.vram}
                             color="#78ceb5"
                           />
                           <Bar
                             label="Temporary"
                             value={
-                              animatedMetrics.memory.temporary +
-                              animatedMetrics.memory.runtime
+                              metrics.gpuDevices.some(
+                                (device) => device.id === selected,
+                              )
+                                ? animatedMetrics.memory.temporary +
+                                  animatedMetrics.memory.runtime
+                                : 0
                             }
-                            total={config.hardware.vram}
+                            total={hardwareView.vram}
                             color="#d99ba9"
                           />
                         </Section>
@@ -2100,57 +2539,50 @@ function StudioInner() {
                 <Section title="Accelerator">
                   <SelectField
                     label="GPU preset"
-                    value={config.hardware.gpu}
+                    value={hardwareView.gpu}
                     options={Object.keys(gpuPresets)}
                     onChange={(v) =>
-                      update("hardware", { gpu: v, ...gpuPresets[v] })
+                      updateHardware({ gpu: v, ...gpuPresets[v] })
                     }
                   />
                   <Field
                     label="VRAM"
-                    value={config.hardware.vram}
-                    onChange={(v) => update("hardware", { vram: v })}
+                    value={hardwareView.vram}
+                    onChange={(v) => updateHardware({ vram: v })}
                     unit="GB"
                   />
                   <Field
                     label="HBM bandwidth"
-                    value={config.hardware.bandwidth}
-                    onChange={(v) => update("hardware", { bandwidth: v })}
+                    value={hardwareView.bandwidth}
+                    onChange={(v) => updateHardware({ bandwidth: v })}
                     unit="GB/s"
                   />
                   <Field
                     label="BF16 compute"
-                    value={config.hardware.compute}
-                    onChange={(v) => update("hardware", { compute: v })}
+                    value={hardwareView.compute}
+                    onChange={(v) => updateHardware({ compute: v })}
                     unit="TFLOPS"
                   />
                   <Field
                     label="FP8 compute"
-                    value={config.hardware.fp8Compute}
-                    onChange={(v) => update("hardware", { fp8Compute: v })}
+                    value={hardwareView.fp8Compute}
+                    onChange={(v) => updateHardware({ fp8Compute: v })}
                     unit="TFLOPS"
                   />
                   <Field
                     label="Power"
-                    value={config.hardware.power}
-                    onChange={(v) => update("hardware", { power: v })}
+                    value={hardwareView.power}
+                    onChange={(v) => updateHardware({ power: v })}
                     unit="W"
                   />
                 </Section>
-                <Section title="Cluster & pricing">
-                  <Field
-                    label="GPUs / node"
-                    value={config.hardware.gpusPerNode}
-                    onChange={(v) => update("hardware", { gpusPerNode: v })}
-                  />
-                  <Field
-                    label="Nodes"
-                    value={config.hardware.nodes}
-                    onChange={(v) => update("hardware", { nodes: v })}
-                  />
+                <Section title="Network & pricing">
+                  <p className="section-note">
+                    GPU count comes from devices connected to the model group.
+                  </p>
                   <SelectField
                     label="Connection"
-                    value={config.hardware.link}
+                    value={hardwareView.link}
                     options={[
                       "NVLink + InfiniBand",
                       "NVSwitch + InfiniBand",
@@ -2159,45 +2591,45 @@ function StudioInner() {
                       "InfiniBand",
                       "Ethernet",
                     ]}
-                    onChange={(v) => update("hardware", { link: v })}
+                    onChange={(v) => updateHardware({ link: v })}
                   />
                   <Field
                     label="Interconnect"
-                    value={config.hardware.interconnect}
-                    onChange={(v) => update("hardware", { interconnect: v })}
+                    value={hardwareView.interconnect}
+                    onChange={(v) => updateHardware({ interconnect: v })}
                     unit="GB/s"
                   />
                   <Field
                     label="Network"
                     value={config.hardware.network}
-                    onChange={(v) => update("hardware", { network: v })}
+                    onChange={(v) => updateHardware({ network: v })}
                     unit="Gb/s"
                   />
                   <Field
                     label="GPU cost / hour"
-                    value={config.hardware.hourlyCost}
-                    onChange={(v) => update("hardware", { hourlyCost: v })}
+                    value={hardwareView.hourlyCost}
+                    onChange={(v) => updateHardware({ hourlyCost: v })}
                     unit="$"
                     step={0.01}
                   />
                   <Field
                     label="Network / hour"
                     value={config.hardware.networkCost}
-                    onChange={(v) => update("hardware", { networkCost: v })}
+                    onChange={(v) => updateHardware({ networkCost: v })}
                     unit="$"
                     step={0.01}
                   />
                   <Field
                     label="Storage / hour"
                     value={config.hardware.storageCost}
-                    onChange={(v) => update("hardware", { storageCost: v })}
+                    onChange={(v) => updateHardware({ storageCost: v })}
                     unit="$"
                     step={0.01}
                   />
                   <Field
                     label="CPU / hour"
                     value={config.hardware.cpuCost}
-                    onChange={(v) => update("hardware", { cpuCost: v })}
+                    onChange={(v) => updateHardware({ cpuCost: v })}
                     unit="$"
                     step={0.01}
                   />
@@ -2264,34 +2696,41 @@ function StudioInner() {
                     </strong>
                   </div>
                 </Section>
-                {config.distributed.dp *
-                  config.distributed.tp *
-                  config.distributed.pp *
-                  config.distributed.ep !==
-                  animatedMetrics.gpus && (
-                  <div className="health-card danger">
-                    <div>
-                      <ShieldAlert size={17} />
-                      <strong>Device mapping mismatch</strong>
+                {metrics.gpus > 0 &&
+                  config.distributed.dp *
+                    config.distributed.tp *
+                    config.distributed.pp *
+                    config.distributed.ep !==
+                    animatedMetrics.gpus && (
+                    <div className="hint-card">
+                      The estimate uses {animatedMetrics.gpus}-way data parallel
+                      until DP × TP × PP × EP matches the connected GPU count.
                     </div>
-                    <p>
-                      DP × TP × PP × EP should equal {animatedMetrics.gpus}{" "}
-                      available GPUs.
-                    </p>
-                  </div>
-                )}
+                  )}
               </>
             )}
           </div>
           <div className="inspector-footer">
             <div>
               <span>EST. TRAINING TIME</span>
-              <strong>{duration(animatedMetrics.hours)}</strong>
+              <strong>
+                {metrics.gpus && !metrics.oom
+                  ? duration(animatedMetrics.hours)
+                  : "—"}
+              </strong>
             </div>
             <div>
               <span>BOTTLENECK</span>
               <strong className={animatedMetrics.oom ? "error" : ""}>
                 {animatedMetrics.bottleneck}
+              </strong>
+            </div>
+            <div className="footer-cost">
+              <span>EST. TOTAL COST</span>
+              <strong>
+                {metrics.gpus && !metrics.oom
+                  ? money(animatedMetrics.cost)
+                  : "—"}
               </strong>
             </div>
           </div>
@@ -2325,7 +2764,14 @@ function StudioInner() {
         </div>
         {bottomOpen && (
           <div className="drawer-content">
-            {bottomTab === "timeline" && (
+            {bottomTab === "timeline" && (!metrics.gpus || metrics.oom) && (
+              <div className="compare-empty">
+                {metrics.oom
+                  ? "The model exceeds a connected GPU's VRAM. Add capacity to see the iteration profile."
+                  : "Connect a GPU to a framed model to see the iteration profile."}
+              </div>
+            )}
+            {bottomTab === "timeline" && metrics.gpus > 0 && !metrics.oom && (
               <>
                 <div className="timeline-info">
                   <strong>Iteration profile</strong>
@@ -2531,14 +2977,18 @@ function StudioInner() {
                   {config.seed}
                 </p>
                 <p>
-                  <span>00:01</span> {animatedMetrics.gpus} ×{" "}
-                  {config.hardware.gpu} allocated
+                  <span>00:01</span>{" "}
+                  {animatedMetrics.gpus
+                    ? `${animatedMetrics.gpus} connected GPU${animatedMetrics.gpus === 1 ? "" : "s"} allocated`
+                    : "No GPU connected to a framed model"}
                 </p>
                 <p>
                   <span>00:02</span>{" "}
-                  {animatedMetrics.oom
-                    ? `OOM: ${Math.abs(animatedMetrics.memory.free).toFixed(1)} GB over VRAM limit`
-                    : `Memory fit: ${animatedMetrics.memory.free.toFixed(1)} GB headroom per GPU`}
+                  {!animatedMetrics.gpus
+                    ? "Connect a GPU node to the model group to estimate memory and cost"
+                    : animatedMetrics.oom
+                      ? `OOM: ${Math.abs(animatedMetrics.memory.free).toFixed(1)} GB over VRAM limit`
+                      : `Memory fit: ${animatedMetrics.memory.free.toFixed(1)} GB headroom per GPU`}
                 </p>
                 <p>
                   <span>00:03</span> Estimated bottleneck:{" "}
@@ -2553,7 +3003,11 @@ function StudioInner() {
         <div className="utility-left">
           <span className="ready-pill">
             <span />{" "}
-            {animatedMetrics.oom ? "OOM predicted" : "Simulation ready"}
+            {!animatedMetrics.gpus
+              ? "Connect GPU to model group"
+              : animatedMetrics.oom
+                ? "OOM predicted"
+                : "Simulation ready"}
           </span>
           <span className="utility-divider" />
           <span>{animatedMetrics.gpus} GPUs</span>

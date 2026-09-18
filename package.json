@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test": "node --import tsx --test tests/*.test.mjs",
     "start": "next start",
     "lint": "eslint"
   },
@@ -22,6 +23,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "prettier": "^3.9.7",
+    "tsx": "^4.23.13",
     "typescript": "^5.9.0"
   }
 }

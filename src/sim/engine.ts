@@ -101,6 +101,17 @@ export type Architecture = {
   embedding: number;
   head: number;
 };
+export type GpuDevice = Pick<
+  Config["hardware"],
+  | "gpu"
+  | "vram"
+  | "bandwidth"
+  | "compute"
+  | "fp8Compute"
+  | "interconnect"
+  | "power"
+  | "hourlyCost"
+> & { id: string };
 export function simulate(
   c: Config,
   architecture: Architecture = {
@@ -110,12 +121,19 @@ export function simulate(
     embedding: 1,
     head: 1,
   },
+  devices: GpuDevice[] = [],
 ) {
   const m = c.model,
     t = c.training,
     h = c.hardware,
     d = c.distributed,
-    gpus = Math.max(1, h.gpusPerNode * h.nodes);
+    gpus = devices.length;
+  const configuredDevices = d.dp * d.tp * d.pp * d.ep;
+  const parallel =
+    configuredDevices === gpus
+      ? d
+      : { ...d, dp: Math.max(1, gpus), tp: 1, pp: 1, ep: 1 };
+  const capacity = devices.reduce((sum, device) => sum + device.vram, 0);
   const bytes = m.precision === "FP32" ? 4 : m.precision === "FP8" ? 1 : 2;
   const layers = m.layers * architecture.transformer;
   const attentionLayers = layers + architecture.attention,
@@ -145,7 +163,7 @@ export function simulate(
       ? 0
       : m.vocab * m.hidden * architecture.head;
   const parameters = embeddings + attention + ffn + norm + lmHead;
-  const localParams = parameters / Math.max(1, d.tp * d.pp);
+  const localParams = parameters / Math.max(1, gpus);
   const paramGB = (localParams * bytes) / gb,
     gradientGB = (localParams * bytes) / gb;
   const optBytes =
@@ -179,7 +197,7 @@ export function simulate(
       bytes *
       attentionFactor) /
     gb /
-    Math.max(1, d.sp * d.tp);
+    Math.max(1, gpus * d.sp);
   const activationGB =
     (t.microBatch *
       m.sequence *
@@ -188,70 +206,90 @@ export function simulate(
       bytes *
       13) /
       gb /
-      Math.max(1, d.pp * d.sp) +
+      Math.max(1, gpus * d.sp) +
     attentionGB;
   const temporaryGB = Math.max(0.5, paramGB * 0.05 + activationGB * 0.08),
     runtimeGB = 1.2;
   const usedGB =
     paramGB + gradientGB + optimizerGB + activationGB + temporaryGB + runtimeGB;
-  const oom = usedGB > h.vram;
+  const gpuDevices = devices.map((device) => ({
+    ...device,
+    usedGB,
+    freeGB: device.vram - usedGB,
+    usage: device.vram > 0 ? (usedGB / device.vram) * 100 : 0,
+    oom: usedGB > device.vram,
+  }));
+  const oom = gpuDevices.some((device) => device.oom);
   const tokensPerStep = t.globalBatch * m.sequence;
   const activeFfn = ffnPer * ffnLayers * activeExpertCount;
   const flopsPerToken =
     6 * (embeddings + attention + activeFfn + norm + lmHead) +
     12 * attentionLayers * m.sequence * m.hidden;
-  const precisionCompute =
-    m.precision === "FP8" && h.fp8Compute > 0
-      ? h.fp8Compute
-      : m.precision === "FP32"
-        ? h.compute * 0.25
-        : m.precision === "Mixed"
-          ? h.compute * 0.88
-          : h.compute;
+  const precisionCompute = devices.reduce(
+    (sum, device) =>
+      sum +
+      (m.precision === "FP8" && device.fp8Compute > 0
+        ? device.fp8Compute
+        : m.precision === "FP32"
+          ? device.compute * 0.25
+          : m.precision === "Mixed"
+            ? device.compute * 0.88
+            : device.compute),
+    0,
+  );
   const peak = precisionCompute * 1e12;
   const parallelPenalty = Math.min(
     0.52,
     0.025 * Math.log2(gpus) +
-      0.038 * (d.tp - 1) +
-      0.025 * (d.pp - 1) +
-      0.015 * (d.dp - 1),
+      0.038 * (parallel.tp - 1) +
+      0.025 * (parallel.pp - 1) +
+      0.015 * (parallel.dp - 1),
   );
   const effectiveLink = Math.max(
     1,
-    h.nodes > 1 ? Math.min(h.interconnect, h.network / 8) : h.interconnect,
+    gpus > 1
+      ? Math.min(...devices.map((device) => device.interconnect))
+      : (devices[0]?.interconnect ?? 1),
   );
   const topologyPenalty =
-    h.nodes > 1
-      ? Math.min(0.3, (h.nodes - 1) * 0.008 * (400 / Math.max(10, h.network)))
+    gpus > 1
+      ? Math.min(0.3, (gpus - 1) * 0.008 * (400 / Math.max(10, h.network)))
       : 0;
   const linkPenalty = Math.min(
     0.18,
     (Math.max(0, 900 - effectiveLink) / 900) * 0.09,
   );
-  const memoryPenalty = Math.max(0, (usedGB / h.vram - 0.72) * 0.14);
-  const utilization = Math.max(
-    0.15,
-    Math.min(
-      0.72,
-      0.52 +
-        Math.log2(Math.max(1, t.microBatch)) * 0.045 -
-        parallelPenalty * 0.3 -
-        memoryPenalty,
-    ),
+  const memoryPenalty = Math.max(
+    0,
+    (usedGB / Math.max(1, capacity / Math.max(1, gpus)) - 0.72) * 0.14,
   );
-  const efficiency = Math.max(
-    0.18,
-    1 - parallelPenalty - topologyPenalty - linkPenalty,
-  );
-  const computeTokens =
-    (peak * gpus * utilization * efficiency) / flopsPerToken;
+  const utilization =
+    gpus && !oom
+      ? Math.max(
+          0.15,
+          Math.min(
+            0.72,
+            0.52 +
+              Math.log2(Math.max(1, t.microBatch)) * 0.045 -
+              parallelPenalty * 0.3 -
+              memoryPenalty,
+          ),
+        )
+      : 0;
+  const efficiency = gpus
+    ? Math.max(0.18, 1 - parallelPenalty - topologyPenalty - linkPenalty)
+    : 0;
+  const computeTokens = (peak * utilization * efficiency) / flopsPerToken;
   const bandwidthTokens =
-    (h.bandwidth * 1e9 * gpus * Math.max(0.25, efficiency)) /
+    (devices.reduce((sum, device) => sum + device.bandwidth, 0) *
+      1e9 *
+      Math.max(0.25, efficiency)) /
     (Math.max(1, (parameters * bytes) / tokensPerStep) +
       m.hidden * m.layers * bytes * 2);
-  const tokensPerSecond = Math.max(1, Math.min(computeTokens, bandwidthTokens));
+  const tokensPerSecond =
+    gpus && !oom ? Math.max(0, Math.min(computeTokens, bandwidthTokens)) : 0;
   const stepsPerSecond = tokensPerSecond / tokensPerStep;
-  const stepSeconds = 1 / stepsPerSecond;
+  const stepSeconds = stepsPerSecond ? 1 / stepsPerSecond : 0;
   const commShare = Math.min(0.38, (1 - efficiency) * 0.62);
   const activeShare = 1 - commShare;
   const forwardSeconds = stepSeconds * 0.3 * activeShare,
@@ -260,34 +298,48 @@ export function simulate(
     communicationSeconds = stepSeconds * commShare;
   const totalTokens = c.dataset.tokens * c.dataset.epochs;
   const steps = Math.ceil(totalTokens / tokensPerStep);
-  const rawHours = totalTokens / tokensPerSecond / 3600;
+  const rawHours = tokensPerSecond ? totalTokens / tokensPerSecond / 3600 : 0;
   const overhead =
     1.12 +
     Math.min(0.13, (1000 / Math.max(1000, t.checkpointInterval)) * 0.04) +
     topologyPenalty * 0.4;
   const hours = rawHours * overhead;
-  const hourlyCost =
-    gpus * h.hourlyCost + h.networkCost + h.storageCost + h.cpuCost;
+  const hourlyCost = gpus
+    ? devices.reduce((sum, device) => sum + device.hourlyCost, 0) +
+      h.networkCost +
+      h.storageCost +
+      h.cpuCost
+    : 0;
   const cost = hours * hourlyCost;
-  const energyKWh = (hours * gpus * h.power) / 1000;
-  const mfu = Math.min(
-    0.75,
-    utilization * efficiency * ((6 * parameters) / flopsPerToken),
-  );
-  const bandwidthUtil = Math.min(
-    0.98,
-    Math.max(
-      0.22,
-      bandwidthTokens < computeTokens ? 0.81 : 0.35 + (usedGB / h.vram) * 0.35,
-    ),
-  );
+  const energyKWh =
+    (hours * devices.reduce((sum, device) => sum + device.power, 0)) / 1000;
+  const mfu = gpus
+    ? Math.min(
+        0.75,
+        utilization * efficiency * ((6 * parameters) / flopsPerToken),
+      )
+    : 0;
+  const bandwidthUtil = gpus
+    ? Math.min(
+        0.98,
+        Math.max(
+          0.22,
+          bandwidthTokens < computeTokens
+            ? 0.81
+            : 0.35 +
+                (usedGB / Math.max(1, capacity / Math.max(1, gpus))) * 0.35,
+        ),
+      )
+    : 0;
   const bottleneck = oom
     ? "GPU memory"
-    : bandwidthTokens < computeTokens
-      ? "Memory bandwidth"
-      : efficiency < 0.7
-        ? "Interconnect"
-        : "Compute";
+    : !gpus
+      ? "No GPU connected"
+      : bandwidthTokens < computeTokens
+        ? "Memory bandwidth"
+        : efficiency < 0.7
+          ? "Interconnect"
+          : "Compute";
   const attentionMatrixGB =
     (t.microBatch * m.heads * m.sequence * m.sequence * bytes) / gb;
   const checkpointGB = (parameters * bytes) / gb + (parameters * optBytes) / gb;
@@ -305,15 +357,17 @@ export function simulate(
       o: o * attentionLayers,
     },
     memory: {
-      parameters: paramGB,
-      gradients: gradientGB,
-      optimizer: optimizerGB,
-      activations: activationGB,
-      temporary: temporaryGB,
-      runtime: runtimeGB,
-      total: usedGB,
-      free: h.vram - usedGB,
+      parameters: gpus ? paramGB : 0,
+      gradients: gpus ? gradientGB : 0,
+      optimizer: gpus ? optimizerGB : 0,
+      activations: gpus ? activationGB : 0,
+      temporary: gpus ? temporaryGB : 0,
+      runtime: gpus ? runtimeGB : 0,
+      total: gpus ? usedGB : 0,
+      free: gpus ? Math.min(...gpuDevices.map((device) => device.freeGB)) : 0,
     },
+    gpuDevices,
+    capacity,
     oom,
     gpus,
     efficiency,
@@ -341,7 +395,7 @@ export function simulate(
     attentionMatrixGB,
     checkpointGB,
     flopsPerToken,
-    peakTFlops: precisionCompute * gpus,
+    peakTFlops: precisionCompute,
     overhead,
   };
 }
