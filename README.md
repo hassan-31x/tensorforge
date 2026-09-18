@@ -1,33 +1,32 @@
 # Tensorforge
 
-Tensorforge is an interactive LLM training design studio. It lets you sketch a decoder-style language model and its GPU topology, then explore how architecture, precision, batching, parallelism, and hardware change memory, throughput, training time, energy, and cost.
+**Design an LLM training system on a canvas and see what the hardware can actually support.**
 
-The interface is a compact canvas for technical exploration rather than a static neural-network diagram. Components can be added, moved, connected, inspected, and reconfigured while the simulation updates in place.
+Tensorforge is an open source, browser based studio for exploring model architecture, GPU allocation, training throughput, memory, time, and cost. Drag components into a graph, load a reference model, connect GPUs to the model group, and inspect the estimates as you tune the system.
 
-## What it includes
+> **Educational simulator:** Tensorforge estimates training behavior. It does not train a model, benchmark a GPU, or quote live cloud prices.
 
-- A drag-and-drop model graph for raw text, tokenizers, embeddings, positional encoding, transformer blocks, attention, feed-forward layers, normalization, LM heads, loss, datasets, optimizers, and GPU nodes. A resizable model group frames the architecture.
-- Connectable node handles for documenting tensor flow and hardware flow.
-- Tensor shape mode with representative shapes such as `[B, T]`, `[B, T, D]`, and `[B, H, T, T]`.
-- Configuration panels for model dimensions, tokenizer settings, dataset size, training schedule, optimizer, precision, GPU presets, per-device specifications, network pricing, and distributed parallelism.
-- A top-level reference model picker for GPT-2 124M, Llama 3.1 8B, Mistral 7B, Gemma 2 9B, Qwen 2.5 72B, and DeepSeek-V3 671B. Choosing one replaces the model, tokenizer, corpus, and canvas graph with that architecture's reference values.
-- Compact architecture presets from tiny transformers through approximate 70B models, plus GPT-style, LLaMA-style, Mistral-style, MoE, encoder-only, and encoder-decoder starting points.
-- Hardware presets for T4, A10, L4, A100, H100, H200, B200-class, and AMD accelerators, with editable specifications and prices.
-- Live estimates for parameter count, parameter groups, per-GPU memory, attention activation memory, GPU utilization, MFU, bandwidth utilization, tokens per second, samples per second, step time, total training time, energy, cost, checkpoint size, and cost per billion tokens.
-- Numeric inspector controls use bounded sliders with readable value outputs. Live telemetry gently moves around the deterministic estimate so memory, throughput, utilization, and spend feel active while you explore.
-- Explicit warnings for VRAM overflow and invalid DP × TP × PP × EP device mappings.
-- A profiler drawer with forward, backward, all-reduce, and optimizer segments, plus memory, parameter, comparison, and log views.
-- A training animation with 1×, 10×, 100×, 1000×, and instant speed controls. The animation exposes deterministic progress, loss, processed tokens, spend, and active graph phases.
-- Local save/load, JSON import/export, report export, PNG architecture export, and shareable URL state.
+## Demo
 
-## Requirements
+[Watch the demo video](docs/demo.mp4) · [Download the placeholder MP4](docs/demo.mp4)
 
-- Node.js 20.9 or newer
-- npm
+<video src="docs/demo.mp4" controls muted loop width="960" aria-label="Tensorforge demo placeholder"></video>
 
-Tensorforge is a client-side Next.js app. It does not require a database, API key, GPU, or hosted backend to run locally.
+The video above is a short **placeholder animation**. Replace `docs/demo.mp4` with your walkthrough when it is ready; the README link will continue to work.
 
-## Run locally
+## Features
+
+- **Visual architecture editor:** Drag, connect, inspect, and resize model components on a React Flow canvas. A model group frames the architecture that GPUs can serve.
+- **Reference models:** Load GPT-2 124M, Llama 3.1 8B, Mistral 7B, Gemma 2 9B, Qwen 2.5 72B, or DeepSeek-V3 671B from the top level picker. Loading a model replaces the current model, tokenizer, dataset, and graph with its saved reference configuration.
+- **Connected GPU accounting:** Only GPUs connected to a group enclosing the whole model contribute capacity or cost. A disconnected GPU is ignored. Per GPU memory and utilization account for mixed device capabilities; adding a weaker GPU can become the limiting factor.
+- **Live training estimates:** Explore parameters, activation and total memory, throughput, utilization, MFU, step time, training time, energy, and cost. Without a connected GPU, hardware time and cost estimates are zero. An out of memory configuration cannot produce a viable training estimate.
+- **Purposeful controls:** Inspector sliders use values suited to each setting: attention heads use common head counts, vocabulary sizes move in thousands, and batch sizes, sequence lengths, prices, and hardware settings have their own steps. Exact values from model presets stay selectable.
+- **Training and profiling views:** Animate forward, backward, all reduce, and optimizer phases; inspect memory, timing, parameter, comparison, and log views.
+- **Portable projects:** Save locally, import and export JSON, export a report or canvas PNG, and share project state through a URL.
+
+## Quick start
+
+**Requirements:** Node.js 20.9+ and npm. No database, API key, hosted backend, or GPU is needed.
 
 ```bash
 npm install
@@ -36,91 +35,66 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-To create and run a production build:
+For a production build:
 
 ```bash
 npm run build
 npm start
 ```
 
-## Using the studio
+## How to use it
 
-1. Start with the model graph in the center. The default project is an approximately 7B decoder setup using BF16. No GPU is allocated initially, so time and cost estimates start at zero.
-2. Drag a component from the left palette onto the canvas, or click a palette item to add it.
-3. Connect a node's right handle to another node's left handle. Select a node or edge to inspect it.
-4. Click **Model group** in the left palette, then drag a rectangle around the complete architecture. Resize it or use **Fit to architecture** in the inspector if needed.
-5. Add GPU nodes and connect each GPU to the group's bottom handle. A disconnected GPU does not affect estimates. Select a GPU to choose its model and inspect its own VRAM use, capacity, and hourly rate.
-6. Use the right-side tabs to change model, dataset, training, hardware, or parallelism settings. Numeric changes recalculate the simulation immediately.
-7. Press **Simulate** to animate execution through the graph. The forward pass, backward pass, all-reduce, and optimizer phases use different colors.
-8. Open **Show profiler** at the bottom for iteration timing, memory and parameter breakdowns, comparisons, and logs.
-9. Use **Compare** in the bottom utility bar to capture a baseline, then change settings to see the current setup against it.
+1. Start with the default model or choose a reference model from the top level model picker. Selecting a reference model replaces the current canvas and entered model data.
+2. Drag components from the left palette onto the canvas and connect their handles to describe the architecture.
+3. Add a **Model group** from the palette. Draw or resize its rectangle so it encloses every model component.
+4. Add a GPU node and connect it to the model group's bottom handle. Only then does that GPU enter capacity, utilization, time, and cost calculations. Add more connected GPUs to compare scaling or mixed hardware.
+5. Use the inspector to adjust model, tokenizer, dataset, training, hardware, and distributed settings. The sliders move through setting specific steps; loaded preset values are retained exactly.
+6. Run the training animation, open the profiler, or capture a comparison baseline to examine the effect of a change.
 
-### Useful experiments
+### Things to try
 
-- Double sequence length and watch the attention score matrix grow quadratically.
-- Switch from standard attention to FlashAttention to compare activation memory and throughput.
-- Change BF16 to FP32 or FP8 and observe the memory and compute consequences.
-- Increase micro-batch size until the GPU memory panel reports an OOM and explains the overage.
-- Change node count, network bandwidth, or parallelism to see topology and communication penalties reduce scaling efficiency.
-- Edit GPU and cloud prices to model a local cluster or a different provider rather than relying on a fixed quote.
+- Increase sequence length and watch attention memory grow.
+- Compare standard attention with FlashAttention.
+- Add an H100 and a smaller GPU to the same model group, then inspect each device's memory pressure.
+- Disconnect one GPU and check how the available capacity and hourly cost change.
+- Increase micro batch size until the configuration exceeds a device's VRAM.
 
-## Save, import, and share
+## How the estimates work
 
-- **Save** stores the current configuration, nodes, and edges in browser local storage under `tensorforge-project`.
-- **Import** accepts a project JSON file exported by Tensorforge.
-- **JSON** exports the complete project configuration and graph.
-- **Report** exports the current configuration, calculated metrics, and timestamp as JSON.
-- **PNG** exports the visible architecture canvas as a PNG image.
-- **Share** encodes the project state into the page URL hash and copies the link to the clipboard.
+The simulation is deterministic for a given configuration and seed. [`src/sim/engine.ts`](src/sim/engine.ts) calculates model parameters, precision dependent memory, attention memory, compute and bandwidth limits, throughput, parallelism overhead, energy, and cost. [`src/sim/topology.ts`](src/sim/topology.ts) determines which GPUs are connected to a complete model group. Individual GPU memory is checked against each device's VRAM.
 
-A project file contains the model, tokenizer, dataset, training, hardware, distributed-training, and graph state needed to reproduce the same estimate with the same seed.
+The interface adds small visual fluctuations to live telemetry; they do not change the underlying estimate. GPU specifications and prices in [`src/data/presets.ts`](src/data/presets.ts) are editable illustrative values, not live provider data. The training animation is a visualization of estimates and does not predict model quality or convergence.
 
-## Simulation model
-
-The simulator is deterministic for a given configuration and seed. It is separated from the React UI in [`src/sim/engine.ts`](src/sim/engine.ts) and currently estimates:
-
-- Dense and mixture-of-experts parameter groups, including embeddings, attention projections, feed-forward experts, normalization, and the LM head.
-- Precision-dependent parameter, gradient, optimizer, activation, temporary, and runtime memory.
-- Connected GPU allocation: the model memory is sharded across connected devices, then compared with each GPU's own VRAM. A small GPU can overflow even when a larger GPU in the same group has headroom.
-- If any connected GPU exceeds its VRAM, training throughput, time, and total cost are unavailable until the configuration fits. The connected devices' hourly rates remain visible.
-- Attention activation memory, including the quadratic `T × T` score matrix and memory-saving attention modes.
-- FLOPs per token, compute and bandwidth limits, GPU utilization, MFU, and tokens per second.
-- Data, tensor, pipeline, sequence, and expert parallelism penalties, including multi-node network overhead.
-- Step count, execution time, checkpoint overhead, energy, hourly spend, complete training cost, and cost per billion tokens.
-
-GPU properties and prices live in [`src/data/presets.ts`](src/data/presets.ts). They are editable educational presets, not live cloud-provider pricing or hardware guarantees.
-
-The training animation visualizes these estimates. It does not execute CUDA kernels, train a model, benchmark a real cluster, or predict convergence quality. The displayed loss curve is a deterministic teaching signal intended to make progress and cost easier to understand.
-
-## Project structure
+## Project layout
 
 ```text
 src/
-  app/
-    page.tsx              # App entry route
-    layout.tsx            # Metadata and root layout
-    globals.css           # Canvas, panels, controls, and responsive styling
+  app/                    Next.js entry point and styles
   components/
-    Studio.tsx            # Canvas, inspector, profiler, and interactions
-  data/
-    presets.ts            # Model, GPU, and default configuration presets
+    Studio.tsx             Canvas, inspector, profiler, and interactions
+    slider-stops.ts        Discrete values for numeric controls
+  data/presets.ts          Reference models, GPUs, and defaults
   sim/
-    engine.ts             # Deterministic training and cost calculations
+    engine.ts              Training and cost calculations
+    topology.ts            Model group and GPU connectivity
+public/                    App icons and static assets
+docs/demo.mp4              Replaceable demo video placeholder
+tests/                     Simulation and slider tests
 ```
 
-The UI uses [React Flow](https://reactflow.dev/) for the graph canvas, [`lucide-react`](https://lucide.dev/) for utility controls, and [`react-icons`](https://react-icons.github.io/react-icons/) for technology and component marks such as NVIDIA, Hugging Face, PyTorch, DeepSeek, and Mistral. PNG export uses `html-to-image`.
+The UI uses [Next.js](https://nextjs.org/), [React Flow](https://reactflow.dev/), [Lucide](https://lucide.dev/), and [React Icons](https://react-icons.github.io/react-icons/). PNG export uses `html-to-image`.
 
-## Extending Tensorforge
-
-To add a model or accelerator preset, update the corresponding map in `src/data/presets.ts`. To add a new metric or change an estimate, update `simulate` in `src/sim/engine.ts` and expose the result in the top bar, inspector, profiler, or report export. Keep the engine free of React state so it remains deterministic and testable.
-
-Before opening a pull request, run:
+## Development
 
 ```bash
 npm test
 npm run build
 ```
 
+To add a reference model or accelerator, edit [`src/data/presets.ts`](src/data/presets.ts). To change a slider's values, edit [`src/components/slider-stops.ts`](src/components/slider-stops.ts). Keep estimate changes in the simulation modules so they can be tested independently of the UI.
+
+Contributions are welcome. Include a clear description of the behavior you changed and run the checks above before opening a pull request.
+
 ## License
 
-No license has been selected for this project yet.
+A license has not been selected yet. Until one is added, the repository does not grant reuse rights beyond those provided by law.
