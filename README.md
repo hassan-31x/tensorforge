@@ -8,11 +8,11 @@ Tensorforge is an open source, browser based studio for exploring model architec
 
 ## Demo
 
-[Watch the demo video](docs/demo.mp4) · [Download the placeholder MP4](docs/demo.mp4)
+![Animated Tensorforge demo preview](docs/demo.gif)
 
-<video src="docs/demo.mp4" controls muted loop width="960" aria-label="Tensorforge demo placeholder"></video>
+[Watch the full demo video](docs/demo.mp4)
 
-The video above is a short **placeholder animation**. Replace `docs/demo.mp4` with your walkthrough when it is ready; the README link will continue to work.
+The preview plays inline and shows a short excerpt of the full video. For a full video player directly inside GitHub's README, upload `docs/demo.mp4` in GitHub's README editor and replace this preview with the generated attachment URL on its own line. GitHub does not render repository-relative MP4 files or `<video>` tags as inline players.
 
 ## Features
 
@@ -78,7 +78,8 @@ src/
     engine.ts              Training and cost calculations
     topology.ts            Model group and GPU connectivity
 public/                    App icons and static assets
-docs/demo.mp4              Replaceable demo video placeholder
+docs/demo.gif              Inline animated demo preview
+docs/demo.mp4              Full demo recording
 tests/                     Simulation and slider tests
 ```
 
